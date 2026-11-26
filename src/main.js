@@ -642,23 +642,38 @@ function selectSlot(i) {
   audio.tap();
 }
 
+const INVENTORY_GROUPS = [
+  ['Building', ['grass', 'dirt', 'stone', 'log', 'planks', 'leaves', 'sand', 'brick', 'snow', 'glassy']],
+  ['Bunny Meadow', ['carrot', 'candy', 'pinkleaf', 'cloud', 'butter', 'mint', 'sky']],
+  ['Coaster', ['rail', 'loop', 'cart']],
+  ['Magic and electrics', ['key', 'generator', 'wire', 'piston', 'lamp']],
+];
+
 function openInventory() {
   const grid = $('inv-grid');
   grid.innerHTML = '';
-  for (const item of ITEMS) {
-    const b = document.createElement('button');
-    b.className = 'inv-item';
-    b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>`;
-    b.addEventListener('click', () => {
-      const existing = state.hotbar.indexOf(item.key);
-      if (existing >= 0) state.slot = existing;
-      else state.hotbar[state.slot] = item.key;
-      renderHotbar();
-      selectSlot(state.slot);
-      closeSheet('inventory');
-      state.needsSave = true;
-    });
-    grid.appendChild(b);
+  const current = state.hotbar[state.slot];
+  for (const [title, keys] of INVENTORY_GROUPS) {
+    const h = document.createElement('h3');
+    h.className = 'inv-group';
+    h.textContent = title;
+    grid.appendChild(h);
+    for (const key of keys) {
+      const item = ITEM_BY_KEY[key];
+      const b = document.createElement('button');
+      b.className = 'inv-item' + (key === current ? ' sel' : '');
+      b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>`;
+      b.addEventListener('click', () => {
+        const existing = state.hotbar.indexOf(item.key);
+        if (existing >= 0) state.slot = existing;
+        else state.hotbar[state.slot] = item.key;
+        renderHotbar();
+        selectSlot(state.slot);
+        closeSheet('inventory');
+        state.needsSave = true;
+      });
+      grid.appendChild(b);
+    }
   }
   openSheet('inventory');
 }
@@ -697,8 +712,15 @@ function toggleFly() {
 }
 
 function updateModeUI() {
-  $('btn-mode').classList.toggle('on', state.tapBreaks);
-  $('btn-mode').querySelector('span').textContent = state.tapBreaks ? 'Break' : 'Build';
+  $('mode-build').setAttribute('aria-pressed', String(!state.tapBreaks));
+  $('mode-break').setAttribute('aria-pressed', String(state.tapBreaks));
+}
+function setMode(breaks) {
+  if (state.tapBreaks === breaks) return;
+  state.tapBreaks = breaks;
+  updateModeUI();
+  audio.tap();
+  toast(breaks ? 'Tap now breaks blocks' : 'Tap now builds blocks');
 }
 
 let jumpHeld = false, downHeld = false, lastJumpTap = 0;
@@ -720,7 +742,8 @@ holdButton($('btn-jump'), () => {
 holdButton($('btn-down'), () => { downHeld = true; }, () => { downHeld = false; });
 $('btn-fly').addEventListener('click', toggleFly);
 $('btn-undo').addEventListener('click', () => undo());
-$('btn-mode').addEventListener('click', () => { state.tapBreaks = !state.tapBreaks; updateModeUI(); audio.tap(); });
+$('mode-build').addEventListener('click', () => setMode(false));
+$('mode-break').addEventListener('click', () => setMode(true));
 $('btn-exit').addEventListener('click', () => stopRide());
 $('btn-menu').addEventListener('click', () => openSheet('menu'));
 $('btn-resume').addEventListener('click', () => closeSheet('menu'));
