@@ -117,7 +117,7 @@
           <div class="toggle-row"><span>Day and night</span><button class="toggle" id="tog-day" role="switch" aria-checked="true" aria-label="Day and night"><i></i></button></div>
           <label class="toggle-row" for="look-speed"><span>Look speed</span><input type="range" id="look-speed" min="0.4" max="2" step="0.1" value="1" /></label>
         </div>
-        <button class="sticker-btn" id="btn-stickers"><span class="sb-badges" aria-hidden="true"><i></i><i></i><i></i></span><span class="sb-text"><b>Sticker book</b><span id="sticker-count">0 of 17</span></span><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="sticker-btn" id="btn-stickers"><span class="sb-badges" aria-hidden="true"><i></i><i></i><i></i></span><span class="sb-text"><b>Sticker book</b><span id="sticker-count">0 of 22</span></span><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="tiles">
           <button class="tile" id="btn-save"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M5 4h11l3 3v13H5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 4v5h7V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Save now</span></button>
           <button class="tile" id="btn-help"><svg viewBox="0 0 24 24" width="24" height="24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .9-1 1.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="17" r="1.2" fill="currentColor"/></svg><span>How to play</span></button>
@@ -131,6 +131,7 @@
     <div class="sheet" id="inventory" role="dialog" aria-modal="true" aria-label="All blocks">
       <div class="card wide">
         <div class="sheet-head"><h2>All blocks</h2><button class="round" data-close="inventory" aria-label="Close">✕</button></div>
+        <div id="inv-tabs" role="tablist" aria-label="Block groups"></div>
         <p class="fine">Tap a block to put it in your selected slot.</p>
         <div id="inv-grid"></div>
       </div>
@@ -177,7 +178,8 @@
           <li><b>Bunny Meadow:</b> use the Portal Key inside the carrot frame. Make your own frame from Carrot blocks, 4 wide and 5 tall.</li>
           <li><b>Feed a bunny:</b> pick the <b>Carrot</b> block, then tap a bunny (right click on a computer). Your first fed bunny becomes your pet and follows you everywhere.</li>
           <li><b>Block powers:</b> Cloud is bouncy, Ice is slippery, Mint makes you zoom, Sand falls, Sunshine and Star Block glow at night. Tap a Note Block to play it, tap Fireworks to launch them, tap a Generator to switch it on or off. Each block's power shows when you pick it.</li>
-          <li><b>Treasure:</b> a golden carrot is hidden in each world. Look for the sparkle!</li>
+          <li><b>Treasure:</b> a golden carrot is hidden in each world. In the Overworld it's buried in the grass far from home, and in Bunny Meadow it's on a cloud. Look closely for a glitter!</li>
+          <li><b>TNT:</b> tap it to light the fuse, then stand back. Undo puts everything back.</li>
           <li><b>Stickers:</b> collect them all in the Sticker book in the menu.</li>
           <li><b>No music on iPhone?</b> Tap the screen once, and check the volume buttons.</li>
           <li><b>Electrics:</b> a Generator powers Wire. Wire lights Lamps and pushes Pistons.</li>

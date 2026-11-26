@@ -281,12 +281,91 @@ tile('firework_top', (g) => {
   g.set(7, 5, '#ff9a3c'); g.set(8, 4, '#ffd36a'); g.set(7, 4, '#ff7a2c');
 });
 tile('gold', (g) => {
-  g.noise(['#ffd34d', '#f5c43e', '#ffdc66']);
-  const c = [[4, 11], [5, 10], [6, 9], [7, 8], [8, 7], [9, 6], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [6, 11], [7, 10], [8, 9], [9, 8]];
-  for (const [x, y] of c) g.set(x, y, '#ffaa2c');
-  for (const [x, y] of [[10, 5], [11, 4], [11, 5], [12, 4], [10, 4]]) g.set(x, y, '#7cc06a');
-  g.dots(['#fff8d6'], 0.05);
-  g.frame('#e09d1c');
+  // polished gold with diagonal shine bands and a gleaming carrot
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const band = (x + y) % 11;
+    g.set(x, y, band === 0 || band === 1 ? '#fff3b0' : band === 2 ? '#ffe27a' : g.pick(['#ffcc3d', '#f7c235', '#ffd34d']));
+  }
+  const body = [[4, 12], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [5, 12], [6, 11], [7, 10], [8, 9], [9, 8], [10, 7], [6, 12], [7, 11], [8, 10], [9, 9], [10, 8], [3, 13], [4, 13]];
+  for (const [x, y] of body) g.set(x, y, '#ff9a1f');
+  for (const [x, y] of [[6, 10], [8, 8]]) g.set(x, y, '#ffd08a');
+  for (const [x, y] of [[10, 6], [11, 5], [11, 6], [12, 4], [10, 5], [12, 5], [13, 4]]) g.set(x, y, '#6fbf5a');
+  for (const [x, y] of [[2, 2], [13, 11], [12, 2], [3, 9]]) { g.set(x, y, '#ffffff'); g.set(x + 1, y, '#fff6c8'); g.set(x, y + 1, '#fff6c8'); }
+  g.frame('#d99a1e');
+});
+
+tile('tnt_side', (g) => {
+  g.noise(['#d8463a', '#cf4034', '#e04e41']);
+  for (let x = 0; x < TILE; x++) if (x % 4 === 0) for (let y = 0; y < TILE; y++) g.set(x, y, '#a93b2d');
+  g.rect(0, 5, 16, 6, '#f4ece0');
+  g.rect(0, 5, 16, 1, '#d9cbb6'); g.rect(0, 10, 16, 1, '#d9cbb6');
+  const L = { T: ['###', '.#.', '.#.', '.#.'], N: ['#..#', '##.#', '#.##', '#..#'] };
+  let x0 = 2;
+  for (const ch of 'TNT') {
+    const rows = L[ch];
+    rows.forEach((row, ry) => [...row].forEach((c, rx) => { if (c === '#') g.set(x0 + rx, 6 + ry, '#2a302c'); }));
+    x0 += rows[0].length + 1;
+  }
+});
+tile('tnt_top', (g) => {
+  g.noise(['#d8463a', '#cf4034']);
+  g.frame('#a93b2d');
+  g.rect(6, 6, 4, 4, '#4a3a2e');
+  g.rect(7, 7, 2, 2, '#2a302c');
+  g.set(8, 5, '#6c5c4e'); g.set(9, 4, '#6c5c4e'); g.set(9, 3, '#ffb03a'); g.set(10, 2, '#ffe27a');
+});
+tile('tnt_bottom', (g) => { g.noise(['#a93b2d', '#9a3427']); g.frame('#7a2a20'); });
+tile('pot_side', (g) => {
+  g.noise(['#c77d62', '#bd7459', '#cf8a6e']);
+  g.rect(0, 0, 16, 3, '#e09a7c');
+  g.rect(0, 3, 16, 1, '#a9634b');
+  for (let x = 1; x < 16; x += 4) g.rect(x, 7, 2, 2, '#e9b59c');
+  g.rect(0, 15, 16, 1, '#8f523d');
+  g.set(7, 0, '#6fae5a'); g.set(8, 0, '#6fae5a'); g.set(8, 1, '#5a9a4f');
+});
+tile('pot_top', (g) => {
+  g.noise(['#5e3f28', '#664630', '#57391f']);
+  g.frame('#c77d62'); g.frame('#a9634b', 1);
+  const sprout = [[7, 9], [7, 8], [7, 7], [7, 6], [8, 6], [6, 5], [5, 5], [5, 4], [8, 5], [9, 4], [10, 4], [10, 3], [6, 4], [9, 5]];
+  for (const [x, y] of sprout) g.set(x, y, y > 6 ? '#4f8a45' : '#7cc06a');
+});
+tile('warp_top', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const dx = x - 7.5, dy = y - 7.5, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const swirl = Math.sin(a * 2 + d * 0.9);
+    g.set(x, y, d > 7 ? '#4a3780' : swirl > 0.35 ? '#c9b3ff' : swirl > -0.2 ? '#8f6ad8' : '#6a4fb0');
+  }
+  g.set(7, 7, '#ffffff'); g.set(8, 8, '#ffffff'); g.set(7, 8, '#efe4ff'); g.set(8, 7, '#efe4ff');
+});
+tile('warp_side', (g) => {
+  g.noise(['#7a58c2', '#7252b8', '#8360cc']);
+  g.dots(['#efe4ff', '#c9b3ff'], 0.06);
+  g.rect(0, 0, 16, 2, '#4a3780');
+  g.rect(0, 14, 16, 2, '#4a3780');
+});
+tile('honey', (g) => {
+  g.noise(['#f0b23a', '#eaa830', '#f5bd4a']);
+  // honeycomb cells
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const r = Math.floor(y / 4), ox = r % 2 ? 2 : 0;
+    if (y % 4 === 0 || (x + ox) % 4 === 0) g.set(x, y, '#c98a1c');
+  }
+  g.dots(['#ffe08a'], 0.06);
+});
+tile('jukebox_side', (g) => {
+  g.noise(['#7a5438', '#6f4c33', '#83593c']);
+  g.frame('#4f3222');
+  g.rect(3, 3, 10, 10, '#3e2618');
+  for (let y = 4; y < 12; y += 2) g.rect(4, y, 8, 1, '#5a3c28');
+});
+tile('jukebox_top', (g) => {
+  g.noise(['#6c4a32', '#654530']);
+  g.frame('#4f3222');
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const d = Math.hypot(x - 7.5, y - 7.5);
+    if (d < 6) g.set(x, y, d < 1.6 ? '#e05a7a' : Math.floor(d * 2) % 2 ? '#2a2a2a' : '#3a3a3a');
+  }
+  g.set(5, 5, '#6a6a6a'); g.set(6, 4, '#6a6a6a');
 });
 
 const tileCanvases = {};
@@ -354,9 +433,20 @@ const BT = {
   piston: { ...T3('piston_face', 'piston_side', 'piston_back') }, head: T3('piston_face'),
   lamp: { ...T3('lamp_off'), on: T3('lamp_on') }, glassy: T3('ice'), pinkleaf: T3('blossom'), goldcarrot: T3('gold'),
   note: T3('note_top', 'note_side', 'note_top'), firework: T3('firework_top', 'firework_side', 'firework_side'),
+  tnt: T3('tnt_top', 'tnt_side', 'tnt_bottom'), seed: T3('pot_top', 'pot_side', 'pot_side'), booster: T3('white'),
+  warp: T3('warp_top', 'warp_side', 'warp_side'), honey: T3('honey'), jukebox: T3('jukebox_top', 'jukebox_side', 'jukebox_side'),
 };
 for (const b of BLOCKS) if (b) BLOCK_TILES[b.id] = BT[b.key] || T3('white');
 export const WHITE_TILE = TILES.white;
+
+/** A texture of a single named tile (used for the primed TNT entity). */
+export function tileTexture(name) {
+  const t = new THREE.CanvasTexture(tileCanvases[name]);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
 export const PLANKS_TILE = TILES.planks;
 
 // Colour lookup tables per block: [top, side, bottom, sideTop, on] as linear 0..255 rgb triples.
@@ -399,6 +489,13 @@ export function itemIcon(item) {
     for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(14 + i * 4, 52 - i * 12); g.lineTo(46 + i * 4, 52 - i * 12); g.stroke(); }
     g.strokeStyle = '#6f7a80'; g.lineWidth = 4;
     g.beginPath(); g.moveTo(20, 56); g.lineTo(30, 10); g.moveTo(42, 56); g.lineTo(52, 10); g.stroke();
+  } else if (item.key === 'booster') {
+    g.strokeStyle = '#8a6a4f'; g.lineWidth = 5;
+    for (let i = 0; i < 4; i++) { g.beginPath(); g.moveTo(14 + i * 4, 52 - i * 12); g.lineTo(46 + i * 4, 52 - i * 12); g.stroke(); }
+    g.strokeStyle = '#e2553f'; g.lineWidth = 4;
+    g.beginPath(); g.moveTo(20, 56); g.lineTo(30, 10); g.moveTo(42, 56); g.lineTo(52, 10); g.stroke();
+    g.fillStyle = '#ffd34d';
+    g.beginPath(); g.moveTo(36, 14); g.lineTo(46, 30); g.lineTo(40, 30); g.lineTo(38, 44); g.lineTo(28, 28); g.lineTo(34, 28); g.closePath(); g.fill();
   } else if (item.key === 'loop') {
     g.strokeStyle = '#c9a85a'; g.lineWidth = 7;
     g.beginPath(); g.arc(32, 30, 17, 0, 7); g.stroke();

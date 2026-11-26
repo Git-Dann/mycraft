@@ -499,8 +499,52 @@ export class Audio {
     else if (kind === 'wood') this.tone(this.sfx, { at: t, freq: 220 + Math.random() * 40, glide: 160, glideTime: 0.05, gain: 0.07 * v, attack: 0.002, decay: 0.07, type: 'triangle' });
     else if (kind === 'stone') this.noise(this.sfx, { at: t, gain: 0.06 * v, attack: 0.001, decay: 0.04, type: 'bandpass', freq: 1500, q: 1.5 });
     else if (kind === 'sand') this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.07 * v, attack: 0.01, decay: 0.1, type: 'highpass', freq: 1800 });
+    else if (kind === 'honey') this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.08 * v, attack: 0.02, decay: 0.18, type: 'lowpass', freq: 500 });
     else if (kind === 'soft') this.tone(this.sfx, { at: t, freq: 300, glide: 420, glideTime: 0.06, gain: 0.03 * v, attack: 0.005, decay: 0.08 });
     else this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.07 * v, attack: 0.005, decay: 0.07, type: 'lowpass', freq: 900 });
+  }
+
+  /** TNT fuse: a fizzing hiss with quickening ticks. */
+  fuse(seconds = 2.5) {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.noise(this.sfx, { at: t, gain: 0.07, attack: 0.05, decay: seconds, type: 'bandpass', freq: 5200, q: 1.2, sweep: 7000 });
+    let k = 0;
+    for (let x = 0; x < seconds - 0.1; k++) { this.tone(this.sfx, { at: t + x, freq: 900 + k * 40, gain: 0.03, attack: 0.002, decay: 0.05, type: 'triangle' }); x += Math.max(0.09, 0.45 - k * 0.04); }
+  }
+
+  /** Big but rounded boom (no harsh crack), with rumble and falling debris patter. */
+  boom(size = 1) {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.55 * size, attack: 0.005, decay: 1.2, type: 'lowpass', freq: 700, q: 0.7, sweep: 120 });
+    this.tone(this.sfx, { at: t, freq: 90, glide: 32, glideTime: 0.6, gain: 0.45 * size, attack: 0.005, decay: 0.9 });
+    this.tone(this.sfx, { at: t, freq: 160, glide: 60, glideTime: 0.25, gain: 0.18 * size, attack: 0.003, decay: 0.3, type: 'triangle' });
+    for (let i = 0; i < 12; i++) this.noise(this.sfx, { at: t + 0.35 + Math.random() * 1.1, buffer: this.pink, gain: 0.05, attack: 0.002, decay: 0.05, freq: 600 + Math.random() * 1200, q: 2 });
+  }
+
+  /** Warp pad: a quick rising shimmer. */
+  warp() {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.tone(this.sfx, { at: t, freq: 300, glide: 1400, glideTime: 0.35, gain: 0.08, attack: 0.01, decay: 0.4 });
+    this.tone(this.sfx, { at: t + 0.05, freq: 450, glide: 2100, glideTime: 0.35, gain: 0.05, attack: 0.01, decay: 0.4, type: 'triangle' });
+  }
+
+  /** A tree springs up: rising woody pops and a chime. */
+  grow() {
+    if (!this.ok()) return;
+    const t = this.now;
+    [0, 3, 7, 12].forEach((s, i) => this.tone(this.sfx, { at: t + i * 0.08, freq: midiHz(60 + s), gain: 0.08, attack: 0.004, decay: 0.25, type: 'triangle' }));
+    this.tone(this.sfx, { at: t + 0.35, freq: midiHz(84), gain: 0.06, attack: 0.004, decay: 0.6 });
+  }
+
+  /** Booster track whoosh. */
+  boost() {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.noise(this.sfx, { at: t, gain: 0.16, attack: 0.03, decay: 0.5, type: 'bandpass', freq: 500, q: 0.8, sweep: 3200 });
+    this.tone(this.sfx, { at: t, freq: 220, glide: 660, glideTime: 0.3, gain: 0.06, attack: 0.01, decay: 0.35, type: 'sawtooth' });
   }
 
   // --- delight sounds ---------------------------------------------------------------------------------------

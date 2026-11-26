@@ -47,6 +47,16 @@ function textures() {
     g.fillStyle = '#fffbe6';
     g.beginPath(); g.moveTo(32, 2); g.lineTo(36, 28); g.lineTo(62, 32); g.lineTo(36, 36); g.lineTo(32, 62); g.lineTo(28, 36); g.lineTo(2, 32); g.lineTo(28, 28); g.closePath(); g.fill();
   });
+  TEX.smoke = canvasTexture(64, (g) => {
+    for (let i = 0; i < 5; i++) {
+      const x = 20 + Math.random() * 24, y = 20 + Math.random() * 24, r = 12 + Math.random() * 8;
+      const grd = g.createRadialGradient(x, y, 0, x, y, r);
+      grd.addColorStop(0, 'rgba(255,255,255,0.75)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, 64, 64);
+    }
+  });
   TEX.dot = canvasTexture(32, (g) => {
     const grd = g.createRadialGradient(16, 16, 0, 16, 16, 15);
     grd.addColorStop(0, 'rgba(255,255,255,1)');
@@ -87,17 +97,30 @@ export class Effects {
     this.scene = scene;
     // Floating sprites: hearts, music notes, sparkles
     this.sprites = [];
-    for (let i = 0; i < 36; i++) {
+    for (let i = 0; i < 72; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.heart, transparent: true, depthWrite: false }));
       s.visible = false;
       scene.add(s);
       this.sprites.push({ s, life: 0, max: 1, vx: 0, vy: 0, vz: 0, size: 0.5 });
     }
-    // Golden-carrot sparkle beacon
-    this.beacon = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.sparkle, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-    this.beacon.visible = false;
-    scene.add(this.beacon);
+    // Golden carrot: glints dance across the block itself, only noticeable up close
     this.beaconPos = null;
+    this.camPos = new THREE.Vector3();
+
+    // Voxel debris for explosions: square points look like little block chunks
+    this.DB = 500;
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.DB * 3), 3));
+    dg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.DB * 3), 3));
+    this.dbGeo = dg;
+    this.dbVel = new Float32Array(this.DB * 3);
+    this.dbLife = new Float32Array(this.DB);
+    this.dbNext = 0;
+    this.debrisPts = new THREE.Points(dg, new THREE.PointsMaterial({ size: 0.22, vertexColors: true }));
+    this.debrisPts.frustumCulled = false;
+    this.debrisPts.visible = false;
+    scene.add(this.debrisPts);
+    this.dbActive = false;
 
     // Butterflies: two wing quads each
     const wing = new THREE.PlaneGeometry(0.22, 0.18);
@@ -215,9 +238,35 @@ export class Effects {
     this.fwLife[i] = 0.4;
   }
 
-  setBeacon(pos) {
-    this.beaconPos = pos;
-    this.beacon.visible = !!pos;
+  setBeacon(pos) { this.beaconPos = pos; }
+
+  /** Chunks of a broken block flying out from (x,y,z) with an outward push. */
+  debris(x, y, z, colour, cx, cy, cz, n = 3) {
+    const pos = this.dbGeo.attributes.position.array, col = this.dbGeo.attributes.color.array;
+    for (let k = 0; k < n; k++) {
+      const i = this.dbNext;
+      this.dbNext = (this.dbNext + 1) % this.DB;
+      const px = x + rand(0.15, 0.85), py = y + rand(0.15, 0.85), pz = z + rand(0.15, 0.85);
+      pos[i * 3] = px; pos[i * 3 + 1] = py; pos[i * 3 + 2] = pz;
+      const dx = px - cx, dy = py - cy, dz = pz - cz, d = Math.hypot(dx, dy, dz) || 1;
+      const sp = rand(5, 11) / Math.max(1, d * 0.5);
+      this.dbVel[i * 3] = (dx / d) * sp + rand(-1.5, 1.5);
+      this.dbVel[i * 3 + 1] = Math.abs(dy / d) * sp + rand(3, 7);
+      this.dbVel[i * 3 + 2] = (dz / d) * sp + rand(-1.5, 1.5);
+      const f = rand(0.75, 1);
+      col[i * 3] = colour.r * f; col[i * 3 + 1] = colour.g * f; col[i * 3 + 2] = colour.b * f;
+      this.dbLife[i] = rand(0.9, 1.6);
+    }
+    this.dbGeo.attributes.color.needsUpdate = true;
+    this.dbActive = true;
+    this.debrisPts.visible = true;
+  }
+
+  /** Flash, fireball and rolling smoke for a TNT blast. */
+  explosion(x, y, z) {
+    this.pop('sparkle', x, y, z, { size: 7, life: 0.35, vx: 0, vy: 0, vz: 0, tint: 0xffd080 });
+    for (let i = 0; i < 10; i++) this.pop('sparkle', x + rand(-2, 2), y + rand(-1, 1.5), z + rand(-2, 2), { size: rand(1.5, 3), life: rand(0.3, 0.55), vx: rand(-2, 2), vy: rand(0, 2), vz: rand(-2, 2), tint: i % 2 ? 0xff8a3c : 0xffd36a });
+    for (let i = 0; i < 14; i++) this.pop('smoke', x + rand(-3, 3), y + rand(-1, 2), z + rand(-3, 3), { size: rand(2.2, 3.8), life: rand(1.6, 2.6), vx: rand(-0.8, 0.8), vy: rand(0.6, 1.6), vz: rand(-0.8, 0.8), tint: i % 3 ? 0xb9b4ae : 0x8f8a84 });
   }
 
   update(dt, now, onBoom) {
@@ -235,13 +284,31 @@ export class Effects {
       p.s.material.opacity = t > 0.6 ? Math.max(0, 1 - (t - 0.6) / 0.4) : 1;
       if (p.life <= 0) p.s.visible = false;
     }
-    // golden-carrot beacon: gentle twinkle above the block, visible from a distance
+    // golden carrot glitter: tiny glints on the block's own surface, only within ~14 blocks
     if (this.beaconPos) {
-      const tw = 0.75 + Math.sin(now * 0.004) * 0.25;
-      this.beacon.position.set(this.beaconPos[0] + 0.5, this.beaconPos[1] + 1.25 + Math.sin(now * 0.002) * 0.1, this.beaconPos[2] + 0.5);
-      this.beacon.scale.setScalar(1.3 * tw);
-      this.beacon.material.rotation = now * 0.0006;
-      if (Math.random() < dt * 2) this.pop('sparkle', this.beaconPos[0] + rand(0.1, 0.9), this.beaconPos[1] + rand(0.6, 1.2), this.beaconPos[2] + rand(0.1, 0.9), { size: rand(0.15, 0.3), life: 0.9, vy: 0.4 });
+      const [gx, gy, gz] = this.beaconPos;
+      const near = Math.hypot(this.camPos.x - gx - 0.5, this.camPos.y - gy - 0.5, this.camPos.z - gz - 0.5);
+      if (near < 14 && Math.random() < dt * (near < 6 ? 9 : 5)) {
+        // pick a point on a random face of the cube, sitting just proud of the surface
+        const f = Math.floor(Math.random() * 5), a = rand(0.08, 0.92), c = rand(0.08, 0.92);
+        const p = f === 0 ? [a, 1.03, c] : f === 1 ? [-0.03, a, c] : f === 2 ? [1.03, a, c] : f === 3 ? [a, c, -0.03] : [a, c, 1.03];
+        this.pop('sparkle', gx + p[0], gy + p[1], gz + p[2], { size: rand(0.12, 0.28), life: rand(0.35, 0.7), vx: 0, vy: 0.05, vz: 0, tint: Math.random() < 0.5 ? 0xffffff : 0xfff0a0 });
+      }
+    }
+    // explosion debris
+    if (this.dbActive) {
+      const pos = this.dbGeo.attributes.position.array;
+      let alive = false;
+      for (let i = 0; i < this.DB; i++) {
+        if (this.dbLife[i] <= 0) { pos[i * 3 + 1] = -999; continue; }
+        alive = true;
+        this.dbLife[i] -= dt;
+        this.dbVel[i * 3 + 1] -= 22 * dt;
+        pos[i * 3] += this.dbVel[i * 3] * dt; pos[i * 3 + 1] += this.dbVel[i * 3 + 1] * dt; pos[i * 3 + 2] += this.dbVel[i * 3 + 2] * dt;
+      }
+      this.dbGeo.attributes.position.needsUpdate = true;
+      this.dbActive = alive;
+      this.debrisPts.visible = alive;
     }
     // butterflies: flutter upward on a lazy wander, then fade
     for (const b of this.butterflies) {
@@ -297,6 +364,7 @@ export class Effects {
     for (const b of this.butterflies) { b.life = 0; b.g.visible = false; }
     this.rockets.length = 0;
     this.fwLife.fill(0);
+    this.dbLife.fill(0);
   }
 
   /** Keeps spark size right for the screen height (call on resize). */
@@ -460,6 +528,11 @@ const ICON = {
   firework: '<g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></g>',
   note: '<path d="M9 18V6l10-2v12" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="7" cy="18" r="2.6" fill="currentColor"/><circle cx="17" cy="16" r="2.6" fill="currentColor"/>',
   lamp: '<circle cx="12" cy="10" r="5" fill="currentColor"/><path d="M9 17h6M10 20h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
+  boom: '<path d="M12 2l2.2 5.2L19 5l-2 5 5 2-5 2 2 5-4.8-2.2L12 22l-2.2-5.2L5 19l2-5-5-2 5-2-2-5 4.8 2.2z" fill="currentColor"/>',
+  tree: '<circle cx="12" cy="9" r="6" fill="currentColor"/><rect x="10.5" y="13" width="3" height="8" rx="1" fill="currentColor"/>',
+  warp: '<path d="M12 4a8 8 0 1 0 8 8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M12 8a4 4 0 1 0 4 4" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/>',
+  disc: '<circle cx="12" cy="12" r="9" fill="currentColor"/><circle cx="12" cy="12" r="3" fill="#fff" opacity=".8"/><path d="M12 6a6 6 0 0 1 6 6" stroke="#fff" stroke-width="1.2" fill="none" opacity=".6"/>',
+  bolt: '<path d="M13 2L5 13h6l-1 9 8-12h-6z" fill="currentColor"/>',
   portal: '<rect x="6" y="3" width="12" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2.4"/><rect x="9" y="6" width="6" height="12" rx="1" fill="currentColor" opacity=".55"/>',
 };
 
@@ -481,6 +554,11 @@ export const STICKERS = [
   { id: 'firework', title: 'Sky sparkles', hint: 'Launch a firework', icon: 'firework', colour: '#e05a7a' },
   { id: 'music', title: 'Music maker', hint: 'Play a note block', icon: 'note', colour: '#9c6b49' },
   { id: 'lamp', title: 'Light it up', hint: 'Power a lamp', icon: 'lamp', colour: '#f2c94c' },
+  { id: 'kaboom', title: 'Kaboom!', hint: 'Set off some TNT', icon: 'boom', colour: '#d8463a' },
+  { id: 'gardener', title: 'Green thumb', hint: 'Grow a tree from a seed', icon: 'tree', colour: '#5f9e4d' },
+  { id: 'warp', title: 'Zap!', hint: 'Travel by Warp Pad', icon: 'warp', colour: '#8f6ad8' },
+  { id: 'dj', title: 'DJ', hint: 'Change the song on a Jukebox', icon: 'disc', colour: '#6c4a32' },
+  { id: 'boost', title: 'Turbo', hint: 'Hit a Booster on the coaster', icon: 'bolt', colour: '#e2553f' },
 ];
 
 export function stickerBadge(st, unlocked) {
