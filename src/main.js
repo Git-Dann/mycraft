@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './style.css';
 import { AIR, BLOCKS, BY_KEY, DEFAULT_HOTBAR, ITEMS, ITEM_BY_KEY, SOLID, isRail, itemName, POWERS } from './blocks.js';
 import { createAtlas, itemIcon } from './textures.js';
@@ -51,16 +52,32 @@ scene.add(petTag);
 // Soft selector: a glowing outline and faint fill over the targeted block, plus a see-through
 // "ghost" of the selected block where it will be placed.
 const highlight = new THREE.Group();
-const selEdges = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.012, 1.012, 1.012)),
-  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }),
-);
+
+/** A cube outline made of 12 solid bars (GL lines are 1px and vanish on sharp phone screens). */
+function frameGeometry(size, t) {
+  const h = size / 2, parts = [];
+  for (const [ax, ay, az] of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+    for (const a of [-h, h]) for (const b of [-h, h]) {
+      const g = new THREE.BoxGeometry(ax ? size + t : t, ay ? size + t : t, az ? size + t : t);
+      g.translate(ax ? 0 : a, ay ? 0 : ax ? a : b, az ? 0 : b);
+      parts.push(g);
+    }
+  }
+  return mergeGeometries(parts);
+}
+// Two-tone so it reads on grass, snow, sky and at night: a soft light halo with a dark core
+const selHaloMat = new THREE.MeshBasicMaterial({ color: 0xfffaf3, transparent: true, opacity: 0.55, depthWrite: false });
+const selCoreMat = new THREE.MeshBasicMaterial({ color: 0x2a302c, transparent: true, opacity: 0.85, depthWrite: false });
+const selTouch = new THREE.Group(), selDesk = new THREE.Group();
+selTouch.add(new THREE.Mesh(frameGeometry(1.03, 0.085), selHaloMat), new THREE.Mesh(frameGeometry(1.03, 0.05), selCoreMat));
+selDesk.add(new THREE.Mesh(frameGeometry(1.02, 0.05), selHaloMat), new THREE.Mesh(frameGeometry(1.02, 0.028), selCoreMat));
+for (const g of [selTouch, selDesk]) g.children.forEach((m) => { m.renderOrder = 5; });
+const selEdges = { material: selCoreMat };
 const selFill = new THREE.Mesh(
   new THREE.BoxGeometry(1.01, 1.01, 1.01),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false }),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14, depthWrite: false }),
 );
-selEdges.renderOrder = 5;
-highlight.add(selFill, selEdges);
+highlight.add(selFill, selTouch, selDesk);
 highlight.visible = false;
 scene.add(highlight);
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
@@ -81,7 +98,9 @@ function showSelector(h, withGhost, now) {
   if (!h.ok) return;
   highlight.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
   const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-  selEdges.material.opacity = 0.65 + pulse * 0.3;
+  selEdges.material.opacity = 0.7 + pulse * 0.25;
+  selTouch.visible = input.touchMode;
+  selDesk.visible = !input.touchMode;
   if (!withGhost) return;
   const item = ITEM_BY_KEY[state.hotbar[state.slot]];
   if (!item || item.tool) return;
@@ -649,9 +668,17 @@ function updateUndoUI() { $('btn-undo').classList.toggle('dim', undoStack.length
 // Touch feedback: briefly outline the block that was just built or broken
 let flashUntil = 0;
 const flashPos = new THREE.Vector3();
-function flashAt(x, y, z) {
+/** The kept outline goes once the block changes or you walk away from it. */
+function flashStillValid() {
+  if (!flashBlock) return true;
+  const [x, y, z, id, px, pz] = flashBlock;
+  return world.get(x, y, z) === id && Math.hypot(player.pos.x - px, player.pos.z - pz) < 2.5;
+}
+let flashBlock = null; // on phones, keep outlining the block you just built for a few seconds
+function flashAt(x, y, z, keep = 0) {
   flashPos.set(x + 0.5, y + 0.5, z + 0.5);
-  flashUntil = performance.now() + 260;
+  flashUntil = performance.now() + Math.max(300, keep);
+  flashBlock = keep ? [x, y, z, world.get(x, y, z), player.pos.x, player.pos.z] : null;
 }
 
 function breakAt(h) {
@@ -773,7 +800,7 @@ function useAt(h) {
   }
   remember(x, py, z);
   world.set(x, py, z, id, meta);
-  flashAt(x, py, z);
+  flashAt(x, py, z, 3500);
   navigator.vibrate?.(6);
   countBuilt();
   if (id === B.note) playNote(x, y, z);
@@ -1368,10 +1395,15 @@ function frame(now) {
     showSelector(targetFromScreen(lk.x, lk.y), false, now); // breaking: outline only
   } else if (lk && !lk.moved) {
     showSelector(targetFromScreen(lk.x, lk.y), !state.tapBreaks, now);
-  } else if (now < flashUntil) {
+  } else if (now < flashUntil && flashStillValid()) {
+    // After a tap, the finger has lifted: keep outlining that block so you can see what you did
     highlight.visible = true;
     ghost.visible = false;
+    selTouch.visible = input.touchMode;
+    selDesk.visible = !input.touchMode;
     highlight.position.copy(flashPos);
+    const left = flashUntil - now;
+    selEdges.material.opacity = 0.85 * Math.min(1, left / 600);
   } else highlight.visible = ghost.visible = false;
 
   remesh(world.dirty.size > 8 ? 6 : 3);
