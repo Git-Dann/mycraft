@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><clipPath id="t"><rect width="512" height="512" rx="116"/></clipPath>
+  <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9cc3d5"/><stop offset="1" stop-color="#f5ebdd"/></linearGradient></defs>
+  <g clip-path="url(#t)">
+    <rect width="512" height="512" fill="url(#sky)"/>
+    <g transform="translate(256 300)">
+      <path d="M0 -150 L150 -75 L0 0 L-150 -75Z" fill="#7fb069"/>
+      <path d="M-150 -75 L0 0 L0 170 L-150 95Z" fill="#9a7451"/>
+      <path d="M150 -75 L0 0 L0 170 L150 95Z" fill="#7e5d40"/>
+      <path d="M-150 -75 L0 0 L0 30 L-150 -45Z" fill="#6c9c58"/>
+      <path d="M150 -75 L0 0 L0 30 L150 -45Z" fill="#5b8649"/>
+    </g>
+    <g transform="translate(256 150)">
+      <ellipse cx="-34" cy="-40" rx="22" ry="62" transform="rotate(-12 -34 -40)" fill="#fbf6ee"/>
+      <ellipse cx="34" cy="-40" rx="22" ry="62" transform="rotate(12 34 -40)" fill="#fbf6ee"/>
+      <ellipse cx="-34" cy="-38" rx="10" ry="42" transform="rotate(-12 -34 -38)" fill="#f4a9c8"/>
+      <ellipse cx="34" cy="-38" rx="10" ry="42" transform="rotate(12 34 -38)" fill="#f4a9c8"/>
+    </g>
+  </g>
+</svg>
