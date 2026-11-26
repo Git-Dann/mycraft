@@ -10,6 +10,7 @@ import { Input } from './input.js';
 import { Sky, Bunnies, PALETTES } from './scenery.js';
 import { logoSVG } from './logo.js';
 import { saveGame, loadGame, clearGame, loadSettings, saveSettings } from './save.js';
+import { Effects, DayNight, STICKERS, stickerBadge, confetti, celebrate, cheer, nameTag } from './delight.js';
 
 const B = BY_KEY;
 const $ = (id) => document.getElementById(id);
@@ -37,6 +38,15 @@ const sky = new Sky(scene);
 const audio = new Audio();
 const coaster = new Coaster(scene, audio);
 const bunnies = new Bunnies(scene, audio);
+const fx = new Effects(scene);
+const dayNight = new DayNight(scene);
+// Lit lamps, generators and the golden carrot keep full brightness at night
+const glowMat = new THREE.MeshBasicMaterial({ map: atlas, vertexColors: true });
+// Materials that dim at night (all white-based, so their colour is a brightness/tint multiplier)
+const nightMats = { world: [chunkMat, bunnies.mesh.material, coaster.cars[0].material] };
+const petTag = nameTag('Your bunny');
+petTag.visible = false;
+scene.add(petTag);
 
 // Soft selector: a glowing outline and faint fill over the targeted block, plus a see-through
 // "ghost" of the selected block where it will be placed.
@@ -113,7 +123,19 @@ const state = {
   needsSave: false,
   portalCooldown: 0,
   lastPortal: {},
+  fun: freshFun(),
 };
+
+/** Play stats, stickers, the pet and time of day. Stickers and stats carry over to new worlds. */
+function freshFun() {
+  return {
+    stats: { placed: 0, broken: 0, leaves: 0, bounces: 0, rides: 0, loops: 0, laps: 0, fed: 0, notes: 0, fireworks: 0, butterflies: 0, golden: [] },
+    stickers: [],
+    pet: null,
+    time: 0.12,
+    visits: 0,
+  };
+}
 let world = null;
 
 const player = {
@@ -134,14 +156,17 @@ const chunks = new Array(CX * CZ).fill(null);
 
 function setChunkMesh(ci) {
   const cx = ci % CX, cz = Math.floor(ci / CX);
-  const { opaque, trans } = meshChunk(world, cx, cz);
+  const { opaque, trans, glow } = meshChunk(world, cx, cz);
   let c = chunks[ci];
   if (!c) {
-    c = chunks[ci] = { o: new THREE.Mesh(new THREE.BufferGeometry(), chunkMat), t: new THREE.Mesh(new THREE.BufferGeometry(), portalMat) };
-    c.o.matrixAutoUpdate = c.t.matrixAutoUpdate = false;
+    c = chunks[ci] = { o: new THREE.Mesh(new THREE.BufferGeometry(), chunkMat), t: new THREE.Mesh(new THREE.BufferGeometry(), portalMat), g: new THREE.Mesh(new THREE.BufferGeometry(), glowMat) };
+    c.o.matrixAutoUpdate = c.t.matrixAutoUpdate = c.g.matrixAutoUpdate = false;
     c.t.renderOrder = 2;
-    scene.add(c.o, c.t);
+    scene.add(c.o, c.t, c.g);
   }
+  c.g.geometry.dispose();
+  c.g.geometry = glow.v ? glow.toGeometry() : new THREE.BufferGeometry();
+  c.g.visible = glow.v > 0;
   c.o.geometry.dispose();
   c.o.geometry = opaque.v ? opaque.toGeometry() : new THREE.BufferGeometry();
   c.o.visible = opaque.v > 0;
@@ -168,6 +193,7 @@ function getWorld(dim) {
     const saved = state.pendingEdits?.[dim];
     if (saved?.length) w.applyEdits(saved);
     w.dirty.clear();
+    w.signals = [];
     state.worlds[dim] = w;
   }
   return state.worlds[dim];
@@ -187,6 +213,11 @@ function enterDimension(dim, spawnAt) {
     player.pos.set(spawnAt.x, spawnAt.y, spawnAt.z);
     player.vel.set(0, 0, 0);
   }
+  // The pet bunny comes along to whichever world you are in
+  if (state.fun.pet) bunnies.addPet(state.fun.pet.tint, player.pos.x + 1.2, player.pos.z + 1.2);
+  fx.clear();
+  fx.setBeacon(world.findGolden());
+  dayNight.acc = 1;
   updateDimChip();
 }
 
@@ -226,6 +257,7 @@ function moveAxis(axis, delta) {
 }
 
 const fwd = new THREE.Vector3();
+let lastFloor = -1;
 function updatePlayer(dt) {
   const mi = input.move;
   const speed = player.flying ? 9 : 4.6;
@@ -251,11 +283,34 @@ function updatePlayer(dt) {
     const nz = player.pos.z + Math.sign(vz) * (Math.abs(vz) > 0.5 ? ahead : 0);
     if (!collides(nx, player.pos.y + 1.05, nz) && !collides(player.pos.x, player.pos.y + 1.05, player.pos.z)) jump(true);
   }
+  const vyBefore = player.vel.y;
   const hitY = moveAxis('y', player.vel.y * dt);
   if (hitY) {
-    if (player.vel.y < 0) player.onGround = true;
+    if (vyBefore < 0) player.onGround = true;
     player.vel.y = 0;
+    // Clouds are trampolines: boing! (hold Jump to go even higher)
+    if (vyBefore < 0 && !player.flying && world.get(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.5), Math.floor(player.pos.z)) === B.cloud) {
+      const v = Math.max(10, Math.min(16, -vyBefore * 0.9)) + (up ? 3 : 0);
+      player.vel.y = v;
+      player.onGround = false;
+      audio.bounce(v / 12);
+      for (let i = 0; i < 3; i++) fx.pop('sparkle', player.pos.x + (Math.random() - 0.5), player.pos.y + 0.1, player.pos.z + (Math.random() - 0.5), { size: 0.25, life: 0.6, vy: 0.5 });
+      state.fun.stats.bounces++;
+      award('boing');
+    }
   } else player.onGround = player.flying ? false : collides(player.pos.x, player.pos.y - 0.05, player.pos.z);
+
+  // Stepping onto note and firework blocks plays them (a piano floor!)
+  if (player.onGround) {
+    const fx0 = Math.floor(player.pos.x), fy0 = Math.floor(player.pos.y - 0.05), fz0 = Math.floor(player.pos.z);
+    const idx = world.inBounds(fx0, fy0, fz0) ? world.idx(fx0, fy0, fz0) : -1;
+    if (idx !== lastFloor) {
+      lastFloor = idx;
+      const t = idx >= 0 ? world.data[idx] : 0;
+      if (t === B.note) playNote(fx0, fy0, fz0);
+      if (t === B.firework) launchFirework(fx0, fy0, fz0);
+    }
+  } else lastFloor = -1;
 
   if (player.pos.y < -8) {
     const s = safeSpawn(SPAWN.x, SPAWN.z + 3);
@@ -299,7 +354,7 @@ function travel(px, py, pz) {
     player.yaw = Math.PI; // face away from the portal, into the new world
     player.pitch = -0.1;
     toast(to === 'bunny' ? 'Welcome to Bunny Meadow!' : 'Back in the Overworld');
-    if (to === 'bunny') audio.chime();
+    if (to === 'bunny') { audio.chime(); award('portal'); }
     setTimeout(() => fade.classList.remove('on'), 120);
     state.needsSave = true;
   }, 420);
@@ -358,7 +413,7 @@ function soundKind(id) {
   return 'solid';
 }
 
-const CIRCUIT = new Set([B.generator, B.wire, B.piston, B.lamp, B.head]);
+const CIRCUIT = new Set([B.generator, B.wire, B.piston, B.lamp, B.head, B.note, B.firework]);
 
 function afterEdit(id) {
   if (CIRCUIT.has(id)) runCircuits();
@@ -369,6 +424,7 @@ function afterEdit(id) {
 function runCircuits() {
   for (let pass = 0; pass < 4; pass++) {
     const changed = world.recomputePower();
+    handleSignals();
     if (!changed.length) break;
     let moved = false;
     for (const i of changed) {
@@ -401,6 +457,146 @@ function runCircuits() {
     }
     if (!moved) break;
   }
+}
+
+/** Note blocks, fireworks and lamps react when power reaches them. */
+function handleSignals() {
+  const sig = world.signals;
+  if (!sig?.length) return;
+  world.signals = [];
+  for (const [i, t, on] of sig) {
+    if (!on) continue;
+    const x = i % W, z = Math.floor(i / W) % D, y = Math.floor(i / (W * D));
+    if (t === B.note) playNote(x, y, z);
+    else if (t === B.firework) launchFirework(x, y, z);
+    else if (t === B.lamp) award('lamp');
+  }
+}
+
+function playNote(x, y, z) {
+  const step = (((x + z) % 10) + 10) % 10;
+  audio.note(step);
+  fx.pop('note', x + 0.5, y + 1.15, z + 0.5, { size: 0.45, life: 1.1, vy: 1 });
+  state.fun.stats.notes++;
+  award('music');
+}
+
+const fireworkCooldown = new Map();
+function launchFirework(x, y, z) {
+  const i = world.idx(x, y, z), now = performance.now();
+  if ((fireworkCooldown.get(i) || 0) > now) return;
+  fireworkCooldown.set(i, now + 1400);
+  fx.firework(x + 0.5, y + 1.2, z + 0.5);
+  audio.fireworkLaunch();
+  state.fun.stats.fireworks++;
+  award('firework');
+}
+
+// ---- Stickers and celebrations ----
+function award(id) {
+  const fun = state.fun;
+  if (fun.stickers.includes(id)) return;
+  const st = STICKERS.find((s) => s.id === id);
+  if (!st) return;
+  fun.stickers.push(id);
+  state.needsSave = true;
+  if (!state.started) return;
+  audio.sticker();
+  confetti(36);
+  celebrate({ badge: stickerBadge(st, true), kicker: 'New sticker!', title: st.title, line: 'Nice one!' });
+  updateStickerCount();
+}
+
+function updateStickerCount() {
+  $('sticker-count').textContent = `${state.fun.stickers.length} of ${STICKERS.length}`;
+}
+
+function openStickers() {
+  const grid = $('sticker-grid');
+  grid.innerHTML = '';
+  for (const st of STICKERS) {
+    const got = state.fun.stickers.includes(st.id);
+    const el = document.createElement('div');
+    el.className = 'sticker' + (got ? ' got' : '');
+    el.innerHTML = `${stickerBadge(st, got)}<b>${got ? st.title : 'Secret'}</b><span>${st.hint}</span>`;
+    grid.appendChild(el);
+  }
+  $('sticker-summary').textContent = `You have ${state.fun.stickers.length} of ${STICKERS.length} stickers`;
+  openSheet('stickers');
+}
+
+function countBuilt() {
+  const s = state.fun.stats;
+  s.placed++;
+  if (s.placed >= 1) award('first');
+  if (s.placed >= 100) award('builder');
+  if (s.placed >= 1000) award('master');
+}
+
+function collectGolden(x, y, z) {
+  remember(x, y, z);
+  world.set(x, y, z, AIR);
+  fx.setBeacon(null);
+  for (let i = 0; i < 14; i++) fx.pop('sparkle', x + Math.random(), y + Math.random(), z + Math.random(), { size: 0.4, life: 1.2, vy: 1.6 });
+  confetti(110);
+  audio.fanfare();
+  const g = state.fun.stats.golden;
+  if (!g.includes(state.dim)) g.push(state.dim);
+  const other = state.dim === 'overworld' ? 'Bunny Meadow' : 'the Overworld';
+  celebrate({
+    badge: stickerBadge(STICKERS.find((s) => s.id === 'golden'), true),
+    kicker: 'Treasure!',
+    title: 'You found the golden carrot!',
+    line: g.length >= 2 ? 'You found them both. Amazing!' : `Another one is hiding in ${other}...`,
+    ms: 4200,
+  });
+  award('golden');
+  if (g.length >= 2) award('golden2');
+  state.needsSave = true;
+}
+
+// ---- Bunnies: tap for hearts, feed a carrot to make a friend ----
+const _o = new THREE.Vector3();
+function bunnyAt(sx, sy, blockHit) {
+  if (sx === undefined) camera.getWorldDirection(ray);
+  else {
+    ndc.set((sx / innerWidth) * 2 - 1, -(sy / innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    ray.copy(raycaster.ray.direction);
+  }
+  _o.copy(camera.position);
+  const hitB = bunnies.pick(_o, ray, 7);
+  if (!hitB) return null;
+  if (blockHit.ok) {
+    const bd = Math.hypot(blockHit.x + 0.5 - _o.x, blockHit.y + 0.5 - _o.y, blockHit.z + 0.5 - _o.z);
+    if (bd < hitB.dist - 0.4) return null;
+  }
+  return hitB.bunny;
+}
+
+function petBunny(b) {
+  const holdingCarrot = ITEM_BY_KEY[state.hotbar[state.slot]]?.key === 'carrot';
+  bunnies.hop(b, holdingCarrot ? 1.2 : 0.9);
+  fx.hearts(b.x, b.y + 0.9, b.z, holdingCarrot ? 6 : 3);
+  audio.heart();
+  if (!holdingCarrot) {
+    if (!state.hintedCarrot) { state.hintedCarrot = true; toast('Bunnies love carrots. Try holding one!'); }
+    return;
+  }
+  if (!b.fed) {
+    b.fed = true;
+    state.fun.stats.fed++;
+    if (state.fun.stats.fed >= 5) award('feed5');
+  }
+  if (!state.fun.pet && !b.pet) {
+    b.pet = true;
+    state.fun.pet = { tint: b.tint };
+    confetti(60);
+    audio.fanfare();
+    celebrate({ badge: stickerBadge(STICKERS.find((s) => s.id === 'pet'), true), kicker: 'New friend!', title: 'This bunny loves you', line: 'It will follow you everywhere, even through portals.', ms: 4000 });
+    award('pet');
+    state.needsSave = true;
+  } else if (!b.pet) toast('Yum! Crunch crunch.');
 }
 
 // Undo: the last 60 builds and breaks by the player
@@ -445,10 +641,24 @@ function breakAt(h) {
     const [dx, dy, dz] = DIRS[world.getMeta(x, y, z)] || DIRS[2];
     if (world.get(x - dx, y - dy, z - dz) === B.piston) world.set(x - dx, y - dy, z - dz, AIR);
   }
+  if (id === B.goldcarrot) { collectGolden(x, y, z); return; }
   remember(x, y, z);
   world.set(x, y, z, AIR);
   flashAt(x, y, z);
   if (id === B.carrot) collapsePortals(x, y, z);
+  const st = state.fun.stats;
+  st.broken++;
+  if (id === B.leaves || id === B.pinkleaf) {
+    st.leaves++;
+    // Sometimes a butterfly was hiding in the leaves (the first one shows up after a few)
+    if (Math.random() < 0.28 || (st.butterflies === 0 && st.leaves >= 3)) {
+      if (fx.butterfly(x + 0.5, y + 0.5, z + 0.5)) {
+        st.butterflies++;
+        audio.flutter();
+        award('butterfly');
+      }
+    }
+  }
   audio.breakBlock(soundKind(id));
   burst(x, y, z, id);
   afterEdit(id);
@@ -493,6 +703,7 @@ function useAt(h) {
     return;
   }
   if (!h.ok) return;
+  if (h.id === B.goldcarrot) { collectGolden(h.x, h.y, h.z); return; }
   const id = B[item.block];
   const x = h.x + h.nx, y = h.y + h.ny, z = h.z + h.nz;
   if (!world.inBounds(x, y, z)) { toast('You have reached the edge of the world'); return; }
@@ -515,6 +726,8 @@ function useAt(h) {
   world.set(x, y, z, id, meta);
   flashAt(x, y, z);
   navigator.vibrate?.(6);
+  countBuilt();
+  if (id === B.note) playNote(x, y, z);
   audio.place(soundKind(id));
   afterEdit(id);
   if (id === B.generator) audio.power();
@@ -572,7 +785,26 @@ function startRide(x, y, z) {
   player.ride.pitch = 0;
   document.body.classList.add('riding');
   toast('Hold on tight!');
+  state.fun.stats.rides++;
+  award('ride');
 }
+
+coaster.onLoop = () => {
+  const s = state.fun.stats;
+  s.loops++;
+  cheer('Wheee!', `Loops ridden: ${s.loops}`);
+  confetti(30);
+  audio.chime();
+  award('loop');
+  if (s.loops >= 10) award('loops10');
+  state.needsSave = true;
+};
+coaster.onLap = (n) => {
+  state.fun.stats.laps++;
+  cheer(`Lap ${n}!`, n === 1 ? 'Round and round you go' : '');
+  audio.fanfare();
+  confetti(24);
+};
 
 function stopRide() {
   coaster.exit();
@@ -646,7 +878,7 @@ const INVENTORY_GROUPS = [
   ['Building', ['grass', 'dirt', 'stone', 'log', 'planks', 'leaves', 'sand', 'brick', 'snow', 'glassy']],
   ['Bunny Meadow', ['carrot', 'candy', 'pinkleaf', 'cloud', 'butter', 'mint', 'sky']],
   ['Coaster', ['rail', 'loop', 'cart']],
-  ['Magic and electrics', ['key', 'generator', 'wire', 'piston', 'lamp']],
+  ['Magic and electrics', ['key', 'generator', 'wire', 'piston', 'lamp', 'note', 'firework']],
 ];
 
 function openInventory() {
@@ -756,6 +988,8 @@ document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('cli
 function setToggle(id, on) { $(id).setAttribute('aria-checked', String(on)); }
 $('tog-music').addEventListener('click', () => { settings.music = !settings.music; audio.unlock(); audio.setMusic(settings.music); setToggle('tog-music', settings.music); saveSettings(settings); });
 $('tog-sfx').addEventListener('click', () => { settings.sfx = !settings.sfx; audio.setSfx(settings.sfx); setToggle('tog-sfx', settings.sfx); saveSettings(settings); });
+$('tog-day').addEventListener('click', () => { settings.daynight = !settings.daynight; dayNight.enabled = settings.daynight; dayNight.acc = 1; setToggle('tog-day', settings.daynight); saveSettings(settings); });
+$('btn-stickers').addEventListener('click', () => { closeSheet('menu'); openStickers(); });
 $('btn-help').addEventListener('click', () => { closeSheet('menu'); openSheet('help'); });
 $('btn-title-help').addEventListener('click', () => openSheet('help'));
 $('btn-new').addEventListener('click', () => { closeSheet('menu'); openSheet('confirm'); });
@@ -788,9 +1022,28 @@ function startGame() {
       $('coach-move').style.top = `${Math.max(60, j.top - 64)}px`;
       document.body.classList.add('coaching');
       setTimeout(() => document.body.classList.remove('coaching'), 9000);
-      setTimeout(() => toast('Try the Cart on the track!'), 9500);
+      setTimeout(() => celebrate({ kicker: 'Hi friend!', title: "Let's build something amazing", line: 'Tip: pick the Cart and tap the track for a ride.', ms: 4500 }), 9500);
     } else setTimeout(() => toast('Click to play. Left click breaks, right click builds'), 600);
+  } else if (!state.welcomed) {
+    setTimeout(() => celebrate({ kicker: 'Welcome back, friend!', title: welcomeFact(), ms: 4200 }), 700);
   }
+  state.welcomed = true;
+  state.fun.visits++;
+  updateStickerCount();
+}
+
+/** A friendly fact about the player's world for the welcome-back card. */
+function welcomeFact() {
+  const f = state.fun, s = f.stats;
+  const facts = [];
+  if (f.pet) facts.push('Your bunny missed you!');
+  if (s.placed >= 10) facts.push(`You've built ${s.placed.toLocaleString('en-GB')} blocks so far`);
+  if (s.loops >= 1) facts.push(`You've zoomed round ${s.loops} loop${s.loops === 1 ? '' : 's'}`);
+  if (f.stickers.length) facts.push(`You've collected ${f.stickers.length} of ${STICKERS.length} stickers`);
+  if (s.golden.length < 2) facts.push('A golden carrot is still hiding somewhere...');
+  if (s.fireworks >= 3) facts.push(`You've launched ${s.fireworks} fireworks`);
+  if (!facts.length) facts.push('Ready to build something new?');
+  return facts[Math.floor(Math.random() * facts.length)];
 }
 
 // Unlock / re-wake audio on every gesture. iOS only accepts touchend and click as unlocking gestures,
@@ -808,6 +1061,8 @@ const input = new Input($('touch-layer'), {
   onTap: (x, y) => {
     if (coaster.riding) return;
     const h = targetFromScreen(x, y);
+    const b = bunnyAt(x, y, h);
+    if (b) { petBunny(b); return; }
     if (state.tapBreaks) breakAt(h); else useAt(h);
   },
   onHold: (x, y) => {
@@ -817,7 +1072,12 @@ const input = new Input($('touch-layer'), {
   },
   onHoldEnd: () => {},
   onBreak: () => { if (coaster.riding) return; breakAt(targetFromScreen()); },
-  onPlace: () => { if (coaster.riding) return; useAt(targetFromScreen()); },
+  onPlace: () => {
+    if (coaster.riding) return;
+    const h = targetFromScreen();
+    const b = bunnyAt(undefined, undefined, h);
+    if (b) petBunny(b); else useAt(h);
+  },
   onWheel: (d) => selectSlot(state.slot + d),
   onLockChange: (locked) => {
     document.body.classList.toggle('locked', locked);
@@ -859,6 +1119,7 @@ function persist() {
     player: { x: player.pos.x, y: player.pos.y, z: player.pos.z, yaw: player.yaw, pitch: player.pitch, flying: player.flying },
     hotbar: state.hotbar,
     worlds: state.worlds,
+    fun: { ...state.fun, time: dayNight.time },
   });
   state.needsSave = false;
   hasSave = true;
@@ -871,6 +1132,8 @@ function newWorld() {
   state.worlds = {};
   state.pendingEdits = null;
   state.lastPortal = {};
+  // Stickers, stats and the pet carry over; each new world hides new golden carrots
+  state.fun.stats.golden = [];
   state.hotbar = [...DEFAULT_HOTBAR];
   state.slot = 0;
   player.flying = false;
@@ -889,12 +1152,20 @@ function boot() {
     state.seed = saved.seed;
     state.pendingEdits = saved.edits;
     state.hotbar = (saved.hotbar || DEFAULT_HOTBAR).map((k) => (ITEM_BY_KEY[k] ? k : 'grass'));
+    if (saved.fun) {
+      const base = freshFun();
+      state.fun = { ...base, ...saved.fun, stats: { ...base.stats, ...(saved.fun.stats || {}) } };
+      dayNight.time = state.fun.time ?? 0.12;
+    }
     enterDimension(saved.dim || 'overworld');
     const p = saved.player || {};
     player.pos.set(p.x ?? SPAWN.x + 0.5, p.y ?? 18, p.z ?? SPAWN.z + 3.5);
     player.yaw = p.yaw ?? 0;
     player.pitch = p.pitch ?? 0;
     player.flying = !!p.flying;
+    // re-seat the pet next to where the player was saved
+    const pet = bunnies.pet();
+    if (pet) { pet.x = pet.fromX = pet.toX = player.pos.x + 1.2; pet.z = pet.fromZ = pet.toZ = player.pos.z + 1.2; pet.y = pet.fromY = pet.toY = bunnies.ground(pet.x, pet.z, player.pos.y + 1); }
     $('btn-play').textContent = 'Continue';
   } else {
     state.seed = (Math.random() * 1e9) | 0;
@@ -908,7 +1179,10 @@ function boot() {
   updateModeUI();
   setToggle('tog-music', settings.music);
   setToggle('tog-sfx', settings.sfx);
+  setToggle('tog-day', settings.daynight);
+  dayNight.enabled = settings.daynight;
   updateUndoUI();
+  updateStickerCount();
   audio.musicOn = settings.music;
   audio.sfxOn = settings.sfx;
   document.querySelectorAll('.logo').forEach((el) => { el.innerHTML = logoSVG(); });
@@ -969,6 +1243,19 @@ function frame(now) {
     const lure = ITEM_BY_KEY[state.hotbar[state.slot]]?.key === 'carrot';
     bunnies.update(dt, player, lure && state.started);
     updateParticles(dt);
+    fx.update(dt, now, () => audio.fireworkBoom());
+    const pet = bunnies.pet();
+    if (pet) {
+      petTag.position.set(pet.x, pet.y + 1.15, pet.z);
+      // only show the tag when the pet is a little way off, so it never fills the screen
+      const d = petTag.position.distanceTo(camera.position);
+      petTag.visible = !coaster.riding && d > 2.6;
+      petTag.material.opacity = Math.min(1, (d - 2.6) / 1.5);
+    } else petTag.visible = false;
+  }
+  if (!state.paused) {
+    dayNight.update(dt, state.dim, camera.position, world, sky, nightMats);
+    if (state.started && dayNight.daylight < 0.12) award('night');
   }
 
   // Selector: desktop follows the crosshair; touch shows it as soon as a finger lands, so players
@@ -1018,7 +1305,7 @@ requestAnimationFrame(frame);
 
 // Debug hook for automated checks (no effect on play)
 window.__mycraftAudio = audio;
-window.__mycraft = { input, state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
+window.__mycraft = { input, state, player, coaster, fx, dayNight, bunnies, petBunny, collectGolden, launchFirework, playNote, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

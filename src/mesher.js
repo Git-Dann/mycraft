@@ -68,11 +68,13 @@ class Buf {
 
 const opaque = new Buf(1 << 15);
 const trans = new Buf(1 << 10);
+const glowBuf = new Buf(1 << 10); // lit lamps, generators, golden carrot: stay bright at night
 const conns = [];
 
 export function meshChunk(world, cx, cz) {
   opaque.reset();
   trans.reset();
+  glowBuf.reset();
   const x0 = cx * CHUNK, z0 = cz * CHUNK;
   const data = world.data;
   for (let y = 0; y < H; y++) {
@@ -90,14 +92,15 @@ export function meshChunk(world, cx, cz) {
       }
     }
   }
-  return { opaque, trans };
+  return { opaque, trans, glow: glowBuf };
 }
 
 function cube(world, x, y, z, id, powered) {
   const col = COLORS[id];
   const def = BLOCKS[id];
   const jitter = 0.95 + hash3(x, y, z) * 0.08;
-  const glow = (id === B.lamp && powered) || id === B.generator;
+  const glow = (id === B.lamp && powered) || id === B.generator || !!def.glow;
+  const out = glow ? glowBuf : opaque;
   for (let f = 0; f < 6; f++) {
     const F = FACES[f];
     const nx = x + F.n[0], ny = y + F.n[1], nz = z + F.n[2];
@@ -126,9 +129,9 @@ function cube(world, x, y, z, id, powered) {
     const flip = ao[0] + ao[2] < ao[1] + ao[3];
     if (F.kind === 'side' && col.sideTop) {
       // grass-style side: dirt below, a green lip on top
-      emitFace(opaque, x, y, z, F, c, tile, ao, shadeBase, 0, 0.72, flip, glow);
-      emitFace(opaque, x, y, z, F, col.sideTop, tile, ao, shadeBase * 0.92, 0.72, 1, flip, glow);
-    } else emitFace(opaque, x, y, z, F, c, tile, ao, shadeBase, 0, 1, flip, glow);
+      emitFace(out, x, y, z, F, c, tile, ao, shadeBase, 0, 0.72, flip, glow);
+      emitFace(out, x, y, z, F, col.sideTop, tile, ao, shadeBase * 0.92, 0.72, 1, flip, glow);
+    } else emitFace(out, x, y, z, F, c, tile, ao, shadeBase, 0, 1, flip, glow);
   }
 }
 
@@ -293,7 +296,7 @@ function wire(world, x, y, z, powered) {
   for (const [dx, dz] of HDIRS) {
     const t = world.get(x + dx, y, z + dz);
     const tb = world.get(x + dx, y - 1, z + dz);
-    if (t === B.wire || t === B.generator || t === B.piston || t === B.lamp || tb === B.wire) {
+    if (t === B.wire || t === B.generator || t === B.piston || t === B.lamp || t === B.note || t === B.firework || tb === B.wire) {
       const ax = dx > 0 ? x + 0.62 : dx < 0 ? x : x + 0.42;
       const bx = dx > 0 ? x + 1 : dx < 0 ? x + 0.38 : x + 0.58;
       const az = dz > 0 ? z + 0.62 : dz < 0 ? z : z + 0.42;

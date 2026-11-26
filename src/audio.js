@@ -489,6 +489,76 @@ export class Audio {
     [0, 7, 12].forEach((s, i) => this.tone(this.sfx, { at: t + i * 0.07, freq: midiHz(76 + s), gain: 0.06, attack: 0.004, decay: 0.5 }));
   }
 
+  // --- delight sounds ---------------------------------------------------------------------------------------
+  /** Springy trampoline boing; bigger bounces go higher in pitch. */
+  bounce(strength = 1) {
+    if (!this.ok()) return;
+    const t = this.now;
+    const f = 180 + strength * 90;
+    this.tone(this.sfx, { at: t, freq: f, glide: f * 2.6, glideTime: 0.18, gain: 0.16, attack: 0.004, decay: 0.24 });
+    this.tone(this.sfx, { at: t + 0.02, freq: f * 1.5, glide: f * 3.2, glideTime: 0.16, gain: 0.05, attack: 0.004, decay: 0.2, type: 'triangle' });
+  }
+
+  /** Two soft rising bloops for hearts. */
+  heart() {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.tone(this.sfx, { at: t, freq: midiHz(79), glide: midiHz(84), glideTime: 0.08, gain: 0.07, attack: 0.005, decay: 0.18 });
+    this.tone(this.sfx, { at: t + 0.1, freq: midiHz(84), glide: midiHz(88), glideTime: 0.08, gain: 0.07, attack: 0.005, decay: 0.25 });
+  }
+
+  /** Little fanfare: a bright major arpeggio and a sparkle. */
+  fanfare() {
+    if (!this.ok()) return;
+    const t = this.now;
+    [72, 76, 79, 84].forEach((m, i) => {
+      this.tone(this.sfx, { at: t + i * 0.09, freq: midiHz(m), gain: 0.09, attack: 0.005, decay: 0.35, type: 'triangle' });
+      this.tone(this.sfx, { at: t + i * 0.09, freq: midiHz(m + 12), gain: 0.03, attack: 0.005, decay: 0.3 });
+    });
+    this.tone(this.sfx, { at: t + 0.36, freq: midiHz(88), gain: 0.07, attack: 0.005, decay: 0.8 });
+    this.noise(this.sfx, { at: t + 0.36, gain: 0.04, attack: 0.01, decay: 0.5, type: 'highpass', freq: 7000 });
+  }
+
+  /** Sticker unlocked: a twinkly chime. */
+  sticker() {
+    if (!this.ok()) return;
+    const t = this.now;
+    [84, 88, 91, 96].forEach((m, i) => this.tone(this.sfx, { at: t + i * 0.06, freq: midiHz(m), gain: 0.05, attack: 0.003, decay: 0.5 }));
+  }
+
+  /** Warm marimba-ish note for note blocks; `step` walks a major pentatonic scale. */
+  note(step) {
+    if (!this.ok()) return;
+    const t = this.now;
+    const scale = [0, 2, 4, 7, 9];
+    const m = 60 + scale[((step % 5) + 5) % 5] + 12 * Math.floor(step / 5);
+    this.tone(this.sfx, { at: t, freq: midiHz(m), gain: 0.16, attack: 0.003, decay: 0.5, type: 'sine' });
+    this.tone(this.sfx, { at: t, freq: midiHz(m) * 4, gain: 0.03, attack: 0.002, decay: 0.08, type: 'sine' });
+    this.tone(this.sfx, { at: t, freq: midiHz(m) * 2, gain: 0.04, attack: 0.003, decay: 0.25, type: 'triangle' });
+  }
+
+  fireworkLaunch() {
+    if (!this.ok()) return;
+    const t = this.now;
+    this.noise(this.sfx, { at: t, gain: 0.08, attack: 0.05, decay: 0.7, type: 'bandpass', freq: 1200, q: 4, sweep: 4200 });
+    this.tone(this.sfx, { at: t, freq: 600, glide: 1800, glideTime: 0.7, gain: 0.025, attack: 0.05, decay: 0.7 });
+  }
+
+  fireworkBoom() {
+    if (!this.ok()) return;
+    const t = this.now;
+    // soft, rounded pop (no harsh bang) followed by a crackle
+    this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.32, attack: 0.004, decay: 0.45, type: 'lowpass', freq: 900, q: 0.7 });
+    this.tone(this.sfx, { at: t, freq: 110, glide: 55, glideTime: 0.3, gain: 0.22, attack: 0.004, decay: 0.4 });
+    for (let i = 0; i < 7; i++) this.noise(this.sfx, { at: t + 0.25 + Math.random() * 0.6, gain: 0.04, attack: 0.001, decay: 0.03, type: 'highpass', freq: 4000 });
+  }
+
+  flutter() {
+    if (!this.ok()) return;
+    const t = this.now;
+    for (let i = 0; i < 4; i++) this.noise(this.sfx, { at: t + i * 0.06, gain: 0.03, attack: 0.005, decay: 0.04, type: 'bandpass', freq: 2500, q: 2 });
+  }
+
   // Continuous coaster sound: rolling noise + wind, both following speed.
   cartStart() {
     if (!this.ctx || this.cart) return;
