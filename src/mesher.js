@@ -104,7 +104,7 @@ function cube(world, x, y, z, id, powered) {
   const genOff = id === B.generator && world.getMeta(x, y, z) === 1;
   const lampOn = id === B.lamp && powered;
   // Glowing blocks keep full brightness at night: lit lamps, running generators, golden carrot, Sunshine, Star blocks
-  const glow = lampOn || (id === B.generator && !genOff) || !!def.glow || id === B.butter || id === B.sky;
+  const glow = lampOn || (id === B.generator && !genOff) || !!def.glow || id === B.butter || id === B.sky || id === B.warp;
   const out = glow ? glowBuf : opaque;
   const set = genOff ? tiles.off : lampOn ? tiles.on : tiles;
   const facing = id === B.piston ? world.getMeta(x, y, z) : -1;
@@ -178,13 +178,14 @@ function box(buf, x0, y0, z0, x1, y1, z1, c, tile, bright = 1) {
 
 const STEEL = [150, 160, 166];
 const STEEL_GOLD = [229, 197, 121];
+const BOOST_RED = [235, 92, 64];
 
 // Rails: a sleeper and a pair of bars from the cell centre towards each connection, following slope heights.
 function rail(world, x, y, z, id) {
   world.railConnections(x, y, z, conns);
   const hc = y + 0.1 + (conns.some((c) => c.dy > 0) ? 0.5 : 0);
   const wood = COLORS[B.rail].top;
-  const bar = id === B.loop ? STEEL_GOLD : STEEL;
+  const bar = id === B.loop ? STEEL_GOLD : id === B.booster ? BOOST_RED : STEEL;
   const list = conns.length ? conns.slice() : [{ dx: 1, dz: 0, dy: 0, x: x + 1, y, z, solo: true }, { dx: -1, dz: 0, dy: 0, x: x - 1, y, z, solo: true }];
   if (list.length === 1) list.push({ dx: -list[0].dx, dz: -list[0].dz, dy: 0, solo: true });
   const cx = x + 0.5, cz = z + 0.5;

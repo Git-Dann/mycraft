@@ -153,7 +153,7 @@ export class Coaster {
     for (let i = 0; i < n; i++) {
       const c = cells[i];
       if (i === startIndex) startCtrl = ctrl.length;
-      const p = { x: c.x + 0.5, y: world.railHeight(c.x, c.y, c.z), z: c.z + 0.5, loop: false };
+      const p = { x: c.x + 0.5, y: world.railHeight(c.x, c.y, c.z), z: c.z + 0.5, loop: false, boost: world.get(c.x, c.y, c.z) === B.booster };
       // Corners: steer through the middle of the curved rail rather than the cell centre
       const cc = world.railConnections(c.x, c.y, c.z, []);
       if (cc.length === 2 && cc[0].dx * cc[1].dx + cc[0].dz * cc[1].dz === 0 && world.get(c.x, c.y, c.z) !== B.loop) {
@@ -182,13 +182,13 @@ export class Coaster {
       for (let k = 0; k < sub; k++) {
         const t = k / sub, t2 = t * t, t3 = t2 * t;
         const f = (a, b, c, d) => 0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3);
-        dense.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y), z: f(p0.z, p1.z, p2.z, p3.z), loop: p1.loop && p2.loop, start: i === startCtrl && k === 0 });
+        dense.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y), z: f(p0.z, p1.z, p2.z, p3.z), loop: p1.loop && p2.loop, boost: !!(p1.boost || p2.boost), start: i === startCtrl && k === 0 });
       }
     }
     if (!closed) dense.push({ ...ctrl[m - 1] });
     if (closed) dense.push({ ...dense[0] });
     // Resample at uniform arc length
-    const P = [], U = [], L = [];
+    const P = [], U = [], L = [], Bo = [];
     let acc = 0, startS = 0;
     for (let i = 1; i < dense.length; i++) {
       const a = dense[i - 1], b = dense[i];
@@ -200,6 +200,7 @@ export class Coaster {
         const t = s / seg;
         P.push(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t);
         L.push(a.loop ? 1 : 0);
+        Bo.push(a.boost ? 1 : 0);
         s += STEP;
       }
       acc += seg;
@@ -220,7 +221,7 @@ export class Coaster {
       T.set([t.x, t.y, t.z], i * 3);
       Up.set([up.x, up.y, up.z], i * 3);
     }
-    return { P, T, Up, L, count, length: (count - 1) * STEP, closed, startS: Math.round(startS / STEP) * STEP };
+    return { P, T, Up, L, Bo, count, length: (count - 1) * STEP, closed, startS: Math.round(startS / STEP) * STEP };
   }
 
   board(world, x, y, z) {
@@ -279,7 +280,13 @@ export class Coaster {
     let lifting = false;
     if (this.v < 3.2) { this.v = 3.2; lifting = slope > 0.05; }
     if (inLoop && this.v < 8) this.v += 14 * dt; // magnetic booster keeps loops friendly
-    this.v = Math.min(this.v, 21);
+    // Booster Track: a strong push forward
+    const bi = Math.min(p.count - 1, Math.max(0, Math.floor(this.s / STEP)));
+    const boosting = !!p.Bo[bi];
+    if (boosting) this.v = Math.min(26, Math.max(this.v, 10) + 22 * dt);
+    if (boosting && !this.wasBoost) this.onBoost?.();
+    this.wasBoost = boosting;
+    this.v = Math.min(this.v, 26); // drag eases it back down after a booster
     this.s += this.v * this.dir * dt;
     if (p.closed && (this.s >= p.length || this.s < 0)) {
       // Closed circuit: wrap round (previously the camera got stuck at the end after one lap)

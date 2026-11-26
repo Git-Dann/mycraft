@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import './style.css';
 import { AIR, BLOCKS, BY_KEY, DEFAULT_HOTBAR, ITEMS, ITEM_BY_KEY, SOLID, isRail, itemName, POWERS } from './blocks.js';
-import { createAtlas, itemIcon } from './textures.js';
-import { World, W, D, H, CHUNK, CX, CZ, SPAWN, DIRS, findPortalInterior } from './world.js';
+import { createAtlas, itemIcon, tileTexture } from './textures.js';
+import { World, W, D, H, CHUNK, CX, CZ, SPAWN, DIRS, findPortalInterior, plantTree, hash3 } from './world.js';
 import { meshChunk } from './mesher.js';
 import { Coaster } from './coaster.js';
 import { Audio } from './audio.js';
@@ -51,16 +52,32 @@ scene.add(petTag);
 // Soft selector: a glowing outline and faint fill over the targeted block, plus a see-through
 // "ghost" of the selected block where it will be placed.
 const highlight = new THREE.Group();
-const selEdges = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.012, 1.012, 1.012)),
-  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }),
-);
+
+/** A cube outline made of 12 solid bars (GL lines are 1px and vanish on sharp phone screens). */
+function frameGeometry(size, t) {
+  const h = size / 2, parts = [];
+  for (const [ax, ay, az] of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) {
+    for (const a of [-h, h]) for (const b of [-h, h]) {
+      const g = new THREE.BoxGeometry(ax ? size + t : t, ay ? size + t : t, az ? size + t : t);
+      g.translate(ax ? 0 : a, ay ? 0 : ax ? a : b, az ? 0 : b);
+      parts.push(g);
+    }
+  }
+  return mergeGeometries(parts);
+}
+// Two-tone so it reads on grass, snow, sky and at night: a soft light halo with a dark core
+const selHaloMat = new THREE.MeshBasicMaterial({ color: 0xfffaf3, transparent: true, opacity: 0.55, depthWrite: false });
+const selCoreMat = new THREE.MeshBasicMaterial({ color: 0x2a302c, transparent: true, opacity: 0.85, depthWrite: false });
+const selTouch = new THREE.Group(), selDesk = new THREE.Group();
+selTouch.add(new THREE.Mesh(frameGeometry(1.03, 0.085), selHaloMat), new THREE.Mesh(frameGeometry(1.03, 0.05), selCoreMat));
+selDesk.add(new THREE.Mesh(frameGeometry(1.02, 0.05), selHaloMat), new THREE.Mesh(frameGeometry(1.02, 0.028), selCoreMat));
+for (const g of [selTouch, selDesk]) g.children.forEach((m) => { m.renderOrder = 5; });
+const selEdges = { material: selCoreMat };
 const selFill = new THREE.Mesh(
   new THREE.BoxGeometry(1.01, 1.01, 1.01),
-  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false }),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14, depthWrite: false }),
 );
-selEdges.renderOrder = 5;
-highlight.add(selFill, selEdges);
+highlight.add(selFill, selTouch, selDesk);
 highlight.visible = false;
 scene.add(highlight);
 const ghostMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
@@ -81,7 +98,9 @@ function showSelector(h, withGhost, now) {
   if (!h.ok) return;
   highlight.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
   const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-  selEdges.material.opacity = 0.65 + pulse * 0.3;
+  selEdges.material.opacity = 0.7 + pulse * 0.25;
+  selTouch.visible = input.touchMode;
+  selDesk.visible = !input.touchMode;
   if (!withGhost) return;
   const item = ITEM_BY_KEY[state.hotbar[state.slot]];
   if (!item || item.tool) return;
@@ -220,6 +239,10 @@ function enterDimension(dim, spawnAt) {
   if (state.fun.pet) bunnies.addPet(state.fun.pet.tint, player.pos.x + 1.2, player.pos.z + 1.2);
   fx.clear();
   fx.setBeacon(world.findGolden());
+  for (const p of primed) scene.remove(p.mesh);
+  primed.length = 0;
+  growing.length = 0;
+  for (let i = world.data.indexOf(B.seed); i >= 0; i = world.data.indexOf(B.seed, i + 1)) scheduleGrowth(i % W, Math.floor(i / (W * D)), Math.floor(i / W) % D);
   dayNight.acc = 1;
   updateDimChip();
 }
@@ -269,6 +292,7 @@ function stepKind(id) {
   if (id === B.stone || id === B.brick || id === B.piston) return 'stone';
   if (id === B.sand) return 'sand';
   if (id === B.cloud) return 'soft';
+  if (id === B.honey) return 'honey';
   return 'grass';
 }
 function updatePlayer(dt) {
@@ -276,7 +300,9 @@ function updatePlayer(dt) {
   // What are we standing on? Ice is slippery, Mint is fast
   const under = player.onGround ? world.get(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.05), Math.floor(player.pos.z)) : 0;
   const onMint = under === B.mint, onIce = under === B.glassy;
-  const speed = player.flying ? 9 : onMint ? 8.6 : 4.6;
+  const onHoney = under === B.honey;
+  player.onHoney = onHoney;
+  const speed = player.flying ? 9 : onMint ? 8.6 : onHoney ? 2 : 4.6;
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
   const tx = (mi.x * cy + mi.z * sy) * speed;
   const tz = (mi.z * cy - mi.x * sy) * speed;
@@ -334,6 +360,7 @@ function updatePlayer(dt) {
       const t = idx >= 0 ? world.data[idx] : 0;
       if (t === B.note) playNote(fx0, fy0, fz0);
       if (t === B.firework) launchFirework(fx0, fy0, fz0);
+      if (t === B.warp) warpFrom(fx0, fy0, fz0);
     }
   } else lastFloor = -1;
 
@@ -345,7 +372,7 @@ function updatePlayer(dt) {
 }
 
 function jump(auto) {
-  player.vel.y = auto ? 7.2 : 8.2;
+  player.vel.y = player.onHoney ? (auto ? 6.6 : 5.2) : auto ? 7.2 : 8.2;
   player.onGround = false;
   if (!auto) audio.jump();
 }
@@ -494,6 +521,7 @@ function handleSignals() {
     const x = i % W, z = Math.floor(i / W) % D, y = Math.floor(i / (W * D));
     if (t === B.note) playNote(x, y, z);
     else if (t === B.firework) launchFirework(x, y, z);
+    else if (t === B.tnt) lightTNT(x, y, z, 2.5);
     else if (t === B.lamp) award('lamp');
   }
 }
@@ -624,6 +652,153 @@ function petBunny(b) {
   } else if (!b.pet) toast('Yum! Crunch crunch.');
 }
 
+// ---- TNT ----
+let shake = 0;
+const primed = []; // lit TNT entities: { mesh, flash, x, y, z, t, fuse }
+let tntMats = null;
+function tntMaterials() {
+  if (tntMats) return tntMats;
+  const side = new THREE.MeshBasicMaterial({ map: tileTexture('tnt_side') });
+  const top = new THREE.MeshBasicMaterial({ map: tileTexture('tnt_top') });
+  const bottom = new THREE.MeshBasicMaterial({ map: tileTexture('tnt_bottom') });
+  tntMats = [side, side, top, bottom, side, side];
+  return tntMats;
+}
+const tntGeo = new THREE.BoxGeometry(1, 1, 1);
+const tntFlashGeo = new THREE.BoxGeometry(1.04, 1.04, 1.04);
+
+/** Lights a TNT block: it becomes a flashing, swelling entity, then explodes. */
+function lightTNT(x, y, z, fuse) {
+  if (world.get(x, y, z) !== B.tnt) return;
+  world.set(x, y, z, AIR);
+  const mesh = new THREE.Mesh(tntGeo, tntMaterials());
+  const flash = new THREE.Mesh(tntFlashGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false }));
+  mesh.add(flash);
+  mesh.position.set(x + 0.5, y + 0.5, z + 0.5);
+  scene.add(mesh);
+  primed.push({ mesh, flash, x, y, z, t: 0, fuse });
+  if (fuse > 1) { audio.fuse(fuse); toast('Fuse lit! Stand back...'); }
+}
+
+function updateTNT(dt, now) {
+  for (let k = primed.length - 1; k >= 0; k--) {
+    const p = primed[k];
+    p.t += dt;
+    const left = p.fuse - p.t;
+    // flash faster as the fuse runs down, and swell just before the blast
+    const rate = left < 0.8 ? 14 : 6;
+    p.flash.material.opacity = Math.sin(now * 0.001 * rate * Math.PI) > 0 ? 0.65 : 0;
+    const swell = left < 0.5 ? 1 + (0.5 - left) * 0.5 : 1;
+    p.mesh.scale.setScalar(swell);
+    p.mesh.position.y = p.y + 0.5 + (left < 0.5 ? 0 : Math.abs(Math.sin(p.t * 8)) * 0.04);
+    if (left <= 0) {
+      scene.remove(p.mesh);
+      p.flash.material.dispose();
+      primed.splice(k, 1);
+      explode(p.x, p.y, p.z);
+    }
+  }
+}
+
+/** A ragged crater about 9 wide and 3 to 4 deep. Nearby TNT chains. One undo step puts it all back. */
+function explode(x, y, z) {
+  const cx = x + 0.5, cy = y + 0.5, cz = z + 0.5;
+  const cells = [];
+  const R = 4.5;
+  for (let dy = -4; dy <= 2; dy++) for (let dz = -5; dz <= 5; dz++) for (let dx = -5; dx <= 5; dx++) {
+    const bx = x + dx, by = y + dy, bz = z + dz;
+    if (by <= 0 || !world.inBounds(bx, by, bz)) continue;
+    const id = world.get(bx, by, bz);
+    if (!id || id === B.goldcarrot) continue;
+    // squashed ellipsoid: wide, a bit deeper below than above, with a ragged edge
+    const depth = dy < 0 ? 3.6 : 2.4;
+    const e = (dx * dx + dz * dz) / (R * R) + (dy * dy) / (depth * depth);
+    const ragged = 1 + (hash3(bx, by, bz) - 0.5) * 0.55;
+    if (e > ragged) continue;
+    if (id === B.tnt) { lightTNT(bx, by, bz, 0.35 + Math.random() * 0.5); continue; }
+    cells.push([bx, by, bz, id]);
+  }
+  if (cells.length) rememberGroup(cells);
+  const col = new THREE.Color();
+  let rings = false;
+  cells.forEach(([bx, by, bz, id], k) => {
+    if (id === B.loop) rings = true;
+    if (id === B.carrot) collapsePortals(bx, by, bz);
+    world.set(bx, by, bz, AIR);
+    if (k % 2 === 0) { col.set(BLOCKS[id]?.top || '#999'); fx.debris(bx, by, bz, col, cx, cy, cz, 2); }
+  });
+  if (rings) coaster.rebuildRings(world);
+  runCircuits();
+  fx.explosion(cx, cy, cz);
+  audio.boom(1);
+  navigator.vibrate?.([30, 40, 60]);
+  // shake and knock back the player (no damage)
+  const d = Math.hypot(player.pos.x - cx, player.pos.y - cy, player.pos.z - cz);
+  shake = Math.max(shake, Math.max(0, 0.6 - d * 0.03));
+  if (d < 8 && !coaster.riding) {
+    const push = (8 - d) * 1.6;
+    player.hvx += ((player.pos.x - cx) / (d || 1)) * push;
+    player.hvz += ((player.pos.z - cz) / (d || 1)) * push;
+    player.vel.y = Math.max(player.vel.y, 4 + (8 - d) * 0.8);
+    player.onGround = false;
+  }
+  for (const b of bunnies.list) if (Math.hypot(b.x - cx, b.z - cz) < 10) bunnies.hop(b, 1.4);
+  award('kaboom');
+  state.needsSave = true;
+}
+
+// ---- Tree Seeds ----
+const growing = []; // { x, y, z, dim, at }
+function scheduleGrowth(x, y, z) {
+  growing.push({ x, y, z, dim: state.dim, at: performance.now() + 6000 + Math.random() * 5000 });
+}
+function updateGrowth(now) {
+  for (let k = growing.length - 1; k >= 0; k--) {
+    const g = growing[k];
+    if (g.dim !== state.dim) { growing.splice(k, 1); continue; }
+    if (world.get(g.x, g.y, g.z) !== B.seed) { growing.splice(k, 1); continue; }
+    if (Math.random() < 0.03) fx.pop('sparkle', g.x + Math.random(), g.y + 1.05, g.z + Math.random(), { size: 0.18, life: 0.6, vy: 0.4, tint: 0xb8f5a0 });
+    if (now < g.at) continue;
+    growing.splice(k, 1);
+    // remember everything the tree will touch so one Undo removes it
+    const cells = [];
+    for (let dy = 0; dy <= 6; dy++) for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) cells.push([g.x + dx, g.y + dy, g.z + dz]);
+    rememberGroup(cells.filter(([a, b2, c]) => world.inBounds(a, b2, c)));
+    world.set(g.x, g.y, g.z, AIR);
+    const leaf = state.dim === 'bunny' || Math.random() < 0.3 ? B.pinkleaf : B.leaves;
+    plantTree(world, g.x, g.y, g.z, leaf, 4 + Math.floor(Math.random() * 2));
+    for (let i = 0; i < 10; i++) fx.pop('sparkle', g.x + Math.random(), g.y + 1 + Math.random() * 5, g.z + Math.random(), { size: 0.3, life: 0.9, vy: 0.6, tint: 0xc8f5b0 });
+    for (let i = 0; i < 4; i++) fx.pop('heart', g.x + 0.5, g.y + 6, g.z + 0.5, { size: 0.3, life: 1.4, tint: 0x9fd88a });
+    audio.grow();
+    if (Math.hypot(player.pos.x - g.x, player.pos.z - g.z) < 24) toast('Your tree grew!');
+    award('gardener');
+    state.needsSave = true;
+  }
+}
+
+// ---- Warp Pads ----
+let warpCooldown = 0;
+function warpFrom(x, y, z) {
+  const now = performance.now();
+  if (now < warpCooldown) return;
+  const here = world.idx(x, y, z);
+  let target = world.data.indexOf(B.warp, here + 1);
+  if (target < 0) target = world.data.indexOf(B.warp);
+  if (target < 0 || target === here) { toast('Build a second Warp Pad to warp between them'); warpCooldown = now + 3000; return; }
+  const tx = target % W, tz = Math.floor(target / W) % D, ty = Math.floor(target / (W * D));
+  for (let i = 0; i < 8; i++) fx.pop('sparkle', x + Math.random(), y + 1 + Math.random() * 1.5, z + Math.random(), { size: 0.35, life: 0.6, vy: 1.2, tint: 0xc9b3ff });
+  player.pos.set(tx + 0.5, ty + 1.01, tz + 0.5);
+  player.vel.set(0, 0, 0);
+  player.hvx = player.hvz = 0;
+  lastFloor = target;
+  warpCooldown = now + 900;
+  for (let i = 0; i < 10; i++) fx.pop('sparkle', tx + Math.random(), ty + 1 + Math.random() * 1.5, tz + Math.random(), { size: 0.35, life: 0.7, vy: -0.6, tint: 0xc9b3ff });
+  audio.warp();
+  const pet = bunnies.pet();
+  if (pet) { pet.x = pet.fromX = pet.toX = tx + 1.5; pet.z = pet.fromZ = pet.toZ = tz + 0.5; pet.y = pet.fromY = pet.toY = bunnies.ground(pet.x, pet.z, ty + 2); }
+  award('warp');
+}
+
 // Undo: the last 60 builds and breaks by the player
 const undoStack = [];
 function remember(x, y, z) {
@@ -632,11 +807,26 @@ function remember(x, y, z) {
   if (undoStack.length > 60) undoStack.shift();
   updateUndoUI();
 }
+/** Remembers many cells as one undo step (TNT craters, grown trees). */
+function rememberGroup(cells) {
+  undoStack.push({ dim: state.dim, group: cells.map(([x, y, z]) => { const i = world.idx(x, y, z); return [x, y, z, world.data[i], world.meta.get(i)]; }) });
+  if (undoStack.length > 60) undoStack.shift();
+  updateUndoUI();
+}
 function undo() {
   const u = undoStack.pop();
   updateUndoUI();
   if (!u) { toast('Nothing to undo'); return; }
   if (u.dim !== state.dim) { toast('That change was in the other world'); return; }
+  if (u.group) {
+    for (let k = u.group.length - 1; k >= 0; k--) { const [x, y, z, id, meta] = u.group[k]; world.set(x, y, z, id, meta); }
+    audio.place('solid');
+    coaster.rebuildRings(world);
+    runCircuits();
+    toast('Put back!');
+    state.needsSave = true;
+    return;
+  }
   const cur = world.get(u.x, u.y, u.z);
   world.set(u.x, u.y, u.z, u.id, u.meta);
   if (u.id === 0) audio.breakBlock(soundKind(cur)); else audio.place(soundKind(u.id));
@@ -649,9 +839,17 @@ function updateUndoUI() { $('btn-undo').classList.toggle('dim', undoStack.length
 // Touch feedback: briefly outline the block that was just built or broken
 let flashUntil = 0;
 const flashPos = new THREE.Vector3();
-function flashAt(x, y, z) {
+/** The kept outline goes once the block changes or you walk away from it. */
+function flashStillValid() {
+  if (!flashBlock) return true;
+  const [x, y, z, id, px, pz] = flashBlock;
+  return world.get(x, y, z) === id && Math.hypot(player.pos.x - px, player.pos.z - pz) < 2.5;
+}
+let flashBlock = null; // on phones, keep outlining the block you just built for a few seconds
+function flashAt(x, y, z, keep = 0) {
   flashPos.set(x + 0.5, y + 0.5, z + 0.5);
-  flashUntil = performance.now() + 260;
+  flashUntil = performance.now() + Math.max(300, keep);
+  flashBlock = keep ? [x, y, z, world.get(x, y, z), player.pos.x, player.pos.z] : null;
 }
 
 function breakAt(h) {
@@ -706,6 +904,15 @@ function collapsePortals(x, y, z) {
 /** Tapping a block with a power uses it instead of building on it. Returns true if handled. */
 function useBlock(h) {
   if (h.id === B.note) { playNote(h.x, h.y, h.z); return true; }
+  if (h.id === B.tnt) { lightTNT(h.x, h.y, h.z, 2.5); return true; }
+  if (h.id === B.jukebox) {
+    if (!audio.musicOn) { toast('Turn Music on in the menu to hear it'); return true; }
+    audio.newSong();
+    for (let i = 0; i < 5; i++) fx.pop('note', h.x + 0.5 + (Math.random() - 0.5), h.y + 1.2, h.z + 0.5 + (Math.random() - 0.5), { size: 0.4, life: 1.3 });
+    toast('New song!');
+    award('dj');
+    return true;
+  }
   if (h.id === B.firework) { launchFirework(h.x, h.y, h.z); return true; }
   if (h.id === B.generator) {
     const off = world.getMeta(h.x, h.y, h.z) === 1;
@@ -773,10 +980,11 @@ function useAt(h) {
   }
   remember(x, py, z);
   world.set(x, py, z, id, meta);
-  flashAt(x, py, z);
+  flashAt(x, py, z, 3500);
   navigator.vibrate?.(6);
   countBuilt();
   if (id === B.note) playNote(x, y, z);
+  if (id === B.seed) { scheduleGrowth(x, py, z); toast('Planted! Watch it grow...'); }
   audio.place(soundKind(id));
   afterEdit(id);
   if (id === B.generator) audio.power();
@@ -847,6 +1055,11 @@ coaster.onLoop = () => {
   award('loop');
   if (s.loops >= 10) award('loops10');
   state.needsSave = true;
+};
+coaster.onBoost = () => {
+  audio.boost();
+  cheer('Zoom!');
+  award('boost');
 };
 coaster.onLap = (n) => {
   state.fun.stats.laps++;
@@ -926,21 +1139,43 @@ function selectSlot(i) {
 }
 
 const INVENTORY_GROUPS = [
-  ['Building', ['grass', 'dirt', 'stone', 'log', 'planks', 'leaves', 'sand', 'brick', 'snow', 'glassy']],
+  ['Nature', ['grass', 'dirt', 'sand', 'log', 'leaves', 'snow', 'glassy', 'seed']],
+  ['Building', ['stone', 'planks', 'brick', 'honey']],
   ['Bunny Meadow', ['carrot', 'candy', 'pinkleaf', 'cloud', 'butter', 'mint', 'sky']],
-  ['Coaster', ['rail', 'loop', 'cart']],
-  ['Magic and electrics', ['key', 'generator', 'wire', 'piston', 'lamp', 'note', 'firework']],
+  ['Coaster', ['rail', 'booster', 'loop', 'cart']],
+  ['Magic', ['key', 'warp']],
+  ['Electrics', ['generator', 'wire', 'lamp', 'piston']],
+  ['Fun', ['note', 'jukebox', 'firework', 'tnt']],
 ];
+let invTab = 'All';
 
 function openInventory() {
+  renderInventory();
+  openSheet('inventory');
+}
+
+function renderInventory() {
+  const tabs = $('inv-tabs');
+  tabs.innerHTML = '';
+  for (const name of ['All', ...INVENTORY_GROUPS.map((g) => g[0])]) {
+    const t = document.createElement('button');
+    t.className = 'inv-tab' + (name === invTab ? ' on' : '');
+    t.textContent = name;
+    t.setAttribute('aria-pressed', String(name === invTab));
+    t.addEventListener('click', () => { invTab = name; audio.tap(); renderInventory(); });
+    tabs.appendChild(t);
+  }
   const grid = $('inv-grid');
   grid.innerHTML = '';
   const current = state.hotbar[state.slot];
   for (const [title, keys] of INVENTORY_GROUPS) {
-    const h = document.createElement('h3');
-    h.className = 'inv-group';
-    h.textContent = title;
-    grid.appendChild(h);
+    if (invTab !== 'All' && invTab !== title) continue;
+    if (invTab === 'All') {
+      const h = document.createElement('h3');
+      h.className = 'inv-group';
+      h.textContent = title;
+      grid.appendChild(h);
+    }
     for (const key of keys) {
       const item = ITEM_BY_KEY[key];
       const b = document.createElement('button');
@@ -960,7 +1195,7 @@ function openInventory() {
       grid.appendChild(b);
     }
   }
-  openSheet('inventory');
+  grid.scrollTop = 0;
 }
 
 let openSheetId = null;
@@ -1333,11 +1568,20 @@ function frame(now) {
     camera.position.set(player.pos.x, player.pos.y + player.eye, player.pos.z);
     camera.rotation.set(player.pitch, player.yaw, 0, 'YXZ');
   }
+  if (shake > 0.001 && state.started) {
+    // explosion screen shake, quickly easing out
+    camera.position.x += (Math.random() - 0.5) * shake;
+    camera.position.y += (Math.random() - 0.5) * shake;
+    camera.position.z += (Math.random() - 0.5) * shake;
+    shake *= Math.exp(-dt * 6);
+  }
+  if (state.started && !state.paused) { updateTNT(dt, now); updateGrowth(now); }
 
   if (!state.paused || !state.started) {
     const lure = ITEM_BY_KEY[state.hotbar[state.slot]]?.key === 'carrot';
     bunnies.update(dt, player, lure && state.started);
     updateParticles(dt);
+    fx.camPos.copy(camera.position);
     fx.update(dt, now, () => audio.fireworkBoom());
     const pet = bunnies.pet();
     if (pet) {
@@ -1368,10 +1612,15 @@ function frame(now) {
     showSelector(targetFromScreen(lk.x, lk.y), false, now); // breaking: outline only
   } else if (lk && !lk.moved) {
     showSelector(targetFromScreen(lk.x, lk.y), !state.tapBreaks, now);
-  } else if (now < flashUntil) {
+  } else if (now < flashUntil && flashStillValid()) {
+    // After a tap, the finger has lifted: keep outlining that block so you can see what you did
     highlight.visible = true;
     ghost.visible = false;
+    selTouch.visible = input.touchMode;
+    selDesk.visible = !input.touchMode;
     highlight.position.copy(flashPos);
+    const left = flashUntil - now;
+    selEdges.material.opacity = 0.85 * Math.min(1, left / 600);
   } else highlight.visible = ghost.visible = false;
 
   remesh(world.dirty.size > 8 ? 6 : 3);
@@ -1404,7 +1653,7 @@ requestAnimationFrame(frame);
 
 // Debug hook for automated checks (no effect on play)
 window.__mycraftAudio = audio;
-window.__mycraft = { input, state, player, coaster, fx, dayNight, bunnies, petBunny, collectGolden, launchFirework, playNote, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
+window.__mycraft = { undoStack, lightTNT, undo, growing, warpFrom, input, state, player, coaster, fx, dayNight, bunnies, petBunny, collectGolden, launchFirework, playNote, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));

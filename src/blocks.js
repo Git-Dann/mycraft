@@ -36,7 +36,16 @@ export const BLOCKS = [
   { id: 26, key: 'goldcarrot', name: 'Golden Carrot', top: '#ffd34d', side: '#f5b82e', bottom: '#e09d1c', tile: T.GLOW, solid: true, hidden: true, glow: true },
   { id: 27, key: 'note', name: 'Note Block', top: '#8a5a3c', side: '#7a4e33', bottom: '#6a432c', on: '#b07a52', tile: T.GLOW, solid: true },
   { id: 28, key: 'firework', name: 'Fireworks', top: '#e05a7a', side: '#c94a69', bottom: '#a93b55', tile: T.BRICK, solid: true },
+  { id: 29, key: 'tnt', name: 'TNT', top: '#d8463a', side: '#d8463a', bottom: '#a93b2d', tile: T.BRICK, solid: true },
+  { id: 30, key: 'seed', name: 'Tree Seed', top: '#7cc06a', side: '#c77d62', bottom: '#a9634b', tile: T.SMOOTH, solid: true },
+  { id: 31, key: 'booster', name: 'Booster Track', shape: 'rail', top: '#e2553f', side: '#c94a39', bottom: '#c94a39', tile: T.SMOOTH, solid: false },
+  { id: 32, key: 'warp', name: 'Warp Pad', top: '#8f6ad8', side: '#7a58c2', bottom: '#5e4499', tile: T.GLOW, solid: true },
+  { id: 33, key: 'honey', name: 'Honey', top: '#f0b23a', side: '#e5a42e', bottom: '#cf8f22', tile: T.SMOOTH, solid: true },
+  { id: 34, key: 'jukebox', name: 'Jukebox', top: '#6c4a32', side: '#7a5438', bottom: '#5a3c28', tile: T.PLANKS, solid: true },
 ];
+
+// Array position must equal the block id
+for (let i = 1; i < BLOCKS.length; i++) if (BLOCKS[i].id !== i) throw new Error(`BLOCKS out of order at ${i}`);
 
 export const BY_KEY = {};
 for (const b of BLOCKS) if (b) BY_KEY[b.key] = b.id;
@@ -51,7 +60,7 @@ for (const b of BLOCKS) {
 }
 CUBE[BY_KEY.head] = 0;
 
-export const isRail = (id) => id === BY_KEY.rail || id === BY_KEY.loop;
+export const isRail = (id) => id === BY_KEY.rail || id === BY_KEY.loop || id === BY_KEY.booster;
 
 // Items in the creative inventory, in display order. Tools are not blocks.
 export const ITEMS = [
@@ -82,6 +91,12 @@ export const ITEMS = [
   { key: 'lamp', block: 'lamp' },
   { key: 'note', block: 'note' },
   { key: 'firework', block: 'firework' },
+  { key: 'tnt', block: 'tnt' },
+  { key: 'seed', block: 'seed' },
+  { key: 'booster', block: 'booster' },
+  { key: 'warp', block: 'warp' },
+  { key: 'honey', block: 'honey' },
+  { key: 'jukebox', block: 'jukebox' },
 ];
 export const ITEM_BY_KEY = Object.fromEntries(ITEMS.map((i) => [i.key, i]));
 export const itemName = (item) => item.name || BLOCKS[BY_KEY[item.block]].name;
@@ -109,5 +124,11 @@ export const POWERS = {
   rail: ['Ride it', 'Build a track, then ride it with the Cart'],
   loop: ['Loop the loop', 'Put it in a straight track for a loop the loop'],
   cart: ['Ride', 'Tap a piece of track to ride it'],
-  key: ['Opens portals', 'Use it inside a Carrot frame to open a portal'],
+  key: ['Activates portals', 'The portal activator: use it inside a Carrot frame to open a portal'],
+  tnt: ['Tap to light', 'Tap it to light the fuse. Kaboom! Undo puts everything back'],
+  seed: ['Grows a tree', 'Plant it and watch a tree grow'],
+  booster: ['Speeds up', 'Put it in your track to speed the coaster up'],
+  warp: ['Teleports', 'Build two, then step on one to warp to the other'],
+  honey: ['Sticky', 'Sticky! You walk slowly and jump low'],
+  jukebox: ['Tap: new song', 'Tap it to change the music'],
 };
