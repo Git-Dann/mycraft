@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Voxel Sandbox & Coaster World</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #87ceeb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; touch-action: none; }
+    #game-canvas { display: block; width: 100%; height: 100%; }
+
+    /* Crosshair */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%; width: 14px; height: 14px;
+      transform: translate(-50%, -50%); pointer-events: none; z-index: 10;
+    }
+    #crosshair::before, #crosshair::after {
+      content: ""; position: absolute; background: rgba(255,255,255,0.85);
+    }
+    #crosshair::before { top: 6px; left: 0; width: 14px; height: 2px; }
+    #crosshair::after { top: 0; left: 6px; width: 2px; height: 14px; }
+
+    /* Top Bar */
+    #top-bar {
+      position: fixed; top: env(safe-area-inset-top, 10px); left: 10px; right: 10px;
+      display: flex; justify-content: space-between; align-items: center; z-index: 20; pointer-events: none;
+    }
+    .top-group { display: flex; gap: 6px; pointer-events: auto; flex-wrap: wrap; }
+    .pill-btn {
+      background: rgba(20, 24, 32, 0.72); color: #fff; border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 10px; padding: 7px 11px; font-size: 12px; font-weight: 600; backdrop-filter: blur(4px);
+    }
+    .pill-btn:active { background: rgba(255,255,255,0.3); }
+    .pill-btn.active { background: #2e8b57; border-color: #7fffb2; }
+
+    /* Joystick */
+    #joy-zone {
+      position: fixed; bottom: 86px; left: 18px; width: 112px; height: 112px;
+      border-radius: 50%; background: rgba(255,255,255,0.16); border: 2px solid rgba(255,255,255,0.3);
+      z-index: 20; touch-action: none;
+    }
+    #joy-knob {
+      position: absolute; top: 34px; left: 34px; width: 40px; height: 40px;
+      border-radius: 50%; background: rgba(255,255,255,0.75); pointer-events: none;
+    }
+
+    /* Action Buttons */
+    #action-pad {
+      position: fixed; bottom: 86px; right: 16px; display: grid;
+      grid-template-columns: repeat(2, 56px); gap: 8px; z-index: 20;
+    }
+    .act-btn {
+      height: 50px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.3);
+      background: rgba(20, 24, 32, 0.72); color: #fff; font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; text-align: center;
+    }
+    .act-btn:active { background: rgba(255,255,255,0.35); }
+    .act-btn.fly-on { background: #1e90ff; border-color: #9be0ff; }
+
+    /* Hotbar */
+    #hotbar {
+      position: fixed; bottom: env(safe-area-inset-bottom, 10px); left: 50%; transform: translateX(-50%);
+      display: flex; gap: 5px; padding: 5px; background: rgba(15, 18, 24, 0.8);
+      border-radius: 12px; border: 1px solid rgba(255,255,255,0.2); z-index: 25;
+      max-width: 96vw; overflow-x: auto;
+    }
+    .slot {
+      min-width: 48px; height: 48px; border-radius: 8px; border: 2px solid transparent;
+      background: rgba(255,255,255,0.1); color: #fff; font-size: 10px; font-weight: 600;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 2px; text-align: center; flex-shrink: 0;
+    }
+    .slot.selected { border-color: #ffd700; background: rgba(255, 215, 0, 0.22); }
+    .swatch { width: 18px; height: 18px; border-radius: 4px; margin-bottom: 3px; border: 1px solid rgba(0,0,0,0.4); }
+
+    /* Toast */
+    #toast {
+      position: fixed; top: 56px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.75); color: #fff; padding: 6px 14px; border-radius: 20px;
+      font-size: 12px; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 30;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="crosshair"></div>
+  <div id="toast"></div>
+
+  <div id="top-bar">
+    <div class="top-group">
+      <button class="pill-btn" id="btn-save">Save</button>
+      <button class="pill-btn" id="btn-load">Load</button>
+      <button class="pill-btn" id="btn-reset">New World</button>
+    </div>
+    <div class="top-group">
+      <button class="pill-btn" id="btn-dim">Overworld</button>
+      <button class="pill-btn" id="btn-exit-cart" style="display:none;background:#d9534f;">Exit Cart</button>
+    </div>
+  </div>
+
+  <div id="joy-zone"><div id="joy-knob"></div></div>
+
+  <div id="action-pad">
+    <button class="act-btn" id="btn-break">Break</button>
+    <button class="act-btn" id="btn-place">Place</button>
+    <button class="act-btn" id="btn-fly">Fly: OFF</button>
+    <button class="act-btn" id="btn-jump">Jump / Up</button>
+    <button class="act-btn" id="btn-down" style="grid-column: span 2; height: 38px; display:none;">Fly Down</button>
+  </div>
+
+  <div id="hotbar"></div>
+
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script>
+    // --- Lean Shared Engine Setup ---
+    const canvas = document.getElementById('game-canvas');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87ceeb);
+    scene.fog = new THREE.Fog(0x87ceeb, 24, 68);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 80);
+    camera.rotation.order = 'YXZ';
+
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x556644, 0.95);
+    scene.add(hemiLight);
+    const dirLight = new THREE.DirectionalLight(0xfff6e5, 0.75);
+    dirLight.position.set(25, 45, 20);
+    scene.add(dirLight);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.style.opacity = '1';
+      clearTimeout(t._timer);
+      t._timer = setTimeout(() => t.style.opacity = '0', 1800);
+    }
+
+    // --- Block & Item Definitions ---
+    const ITEMS = [
+      { id: 'grass', name: 'Grass', color: '#4caf50', solid: true },
+      { id: 'dirt', name: 'Dirt', color: '#8d5524', solid: true },
+      { id: 'stone', name: 'Stone', color: '#888c8d', solid: true },
+      { id: 'wood', name: 'Wood', color: '#a06a3b', solid: true },
+      { id: 'carrot', name: 'Carrot', color: '#ff7f27', solid: true },
+      { id: 'activator', name: 'Portal Key', color: '#ff69b4', tool: true },
+      { id: 'rail', name: 'Track', color: '#c0a060', solid: false },
+      { id: 'loop', name: 'Loop Track', color: '#ffd700', solid: false },
+      { id: 'cart', name: 'Cart', color: '#e53935', tool: true },
+      { id: 'generator', name: 'Generator', color: '#d32f2f', solid: true },
+      { id: 'wire', name: 'Wire', color: '#5c1a1a', solid: false },
+      { id: 'piston', name: 'Piston', color: '#90a4ae', solid: true }
+    ];
+
+    // Pooled Geometries & Materials (Zero per-block memory leak)
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    const railGeo = new THREE.BoxGeometry(0.9, 0.18, 0.9);
+    const wireGeo = new THREE.BoxGeometry(0.45, 0.12, 0.45);
+    const portalGeo = new THREE.BoxGeometry(0.95, 0.95, 0.25);
+
+    const materials = {};
+    ITEMS.forEach(item => {
+      if (!item.tool) {
+        materials[item.id] = new THREE.MeshLambertMaterial({ color: item.color });
+      }
+    });
+    materials.wireOn = new THREE.MeshLambertMaterial({ color: 0xff3333, emissive: 0xaa1111 });
+    materials.portal = new THREE.MeshLambertMaterial({ color: 0xff80df, transparent: true, opacity: 0.72, emissive: 0x992277 });
+    materials.leaves = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
+    materials.bunny = new THREE.MeshLambertMaterial({ color: 0xffffff });
+
+    // --- World State ---
+    let currentDim = 'overworld'; // 'overworld' | 'bunny'
+    const worlds = { overworld: new Map(), bunny: new Map() };
+    const worldGroup = new THREE.Group();
+    scene.add(worldGroup);
+
+    const entityGroup = new THREE.Group();
+    scene.add(entityGroup);
+    let bunnies = [];
+    let coasterCart = null;
+    let ridingCart = false;
+    let cartProgress = 0;
+    let cartPath = [];
+
+    const keyOf = (x, y, z) => `${x},${y},${z}`;
+    const parseKey = k => k.split(',').map(Number);
+
+    function getMap() { return worlds[currentDim]; }
+
+    function createBlockMesh(type, x, y, z, powered = false) {
+      let mesh;
+      if (type === 'rail') {
+        mesh = new THREE.Mesh(railGeo, materials.rail);
+        mesh.position.set(x, y - 0.41, z);
+      } else if (type === 'loop') {
+        mesh = new THREE.Group();
+        const segs = 12, r = 2.4;
+        for (let i = 0; i < segs; i++) {
+          const a = (i / segs) * Math.PI * 2;
+          const seg = new THREE.Mesh(railGeo, materials.loop);
+          seg.position.set(0, Math.sin(a) * r + r - 0.4, Math.cos(a) * r);
+          seg.rotation.x = -a;
+          mesh.add(seg);
+        }
+        mesh.position.set(x, y, z);
+      } else if (type === 'wire') {
+        mesh = new THREE.Mesh(wireGeo, powered ? materials.wireOn : materials.wire);
+        mesh.position.set(x, y - 0.44, z);
+      } else if (type === 'portal') {
+        mesh = new THREE.Mesh(portalGeo, materials.portal);
+        mesh.position.set(x, y, z);
+      } else {
+        const mat = materials[type] || materials.stone;
+        mesh = new THREE.Mesh(boxGeo, mat);
+        mesh.position.set(x, y, z);
+      }
+      mesh.userData = { type, x, y, z };
+      return mesh;
+    }
+
+    function setBlock(x, y, z, type, updateCircuits = true) {
+      const map = getMap();
+      const k = keyOf(x, y, z);
+      if (map.has(k)) {
+        const old = map.get(k);
+        worldGroup.remove(old.mesh);
+        map.delete(k);
+      }
+      if (type) {
+        const mesh = createBlockMesh(type, x, y, z, false);
+        worldGroup.add(mesh);
+        map.set(k, { type, mesh, powered: false, extended: false });
+      }
+      if (updateCircuits) evaluateCircuits();
+    }
+
+    function rebuildSceneFromMap() {
+      while (worldGroup.children.length) worldGroup.remove(worldGroup.children[0]);
+      while (entityGroup.children.length) entityGroup.remove(entityGroup.children[0]);
+      bunnies = [];
+      coasterCart = null;
+      ridingCart = false;
+      document.getElementById('btn-exit-cart').style.display = 'none';
+
+      const map = getMap();
+      for (const [k, data] of map.entries()) {
+        const [x, y, z] = parseKey(k);
+        data.mesh = createBlockMesh(data.type, x, y, z, data.powered);
+        worldGroup.add(data.mesh);
+      }
+
+      if (currentDim === 'bunny') {
+        scene.background.setHex(0xffd6ec);
+        scene.fog.color.setHex(0xffd6ec);
+        spawnBunnies();
+      } else {
+        scene.background.setHex(0x87ceeb);
+        scene.fog.color.setHex(0x87ceeb);
+      }
+      evaluateCircuits();
+    }
+
+    // --- Terrain Generators ---
+    function generateOverworld() {
+      const map = worlds.overworld;
+      map.clear();
+      const R = 16;
+      for (let x = -R; x <= R; x++) {
+        for (let z = -R; z <= R; z++) {
+          const h = Math.round(Math.sin(x * 0.22) * 1.5 + Math.cos(z * 0.22) * 1.5);
+          map.set(keyOf(x, h, z), { type: 'grass', powered: false });
+          map.set(keyOf(x, h - 1, z), { type: 'dirt', powered: false });
+          map.set(keyOf(x, h - 2, z), { type: 'stone', powered: false });
+        }
+      }
+      // Simple voxel trees
+      [[-6, -6], [7, -5], [-8, 8], [8, 7]].forEach(([tx, tz]) => {
+        const base = Math.round(Math.sin(tx * 0.22) * 1.5 + Math.cos(tz * 0.22) * 1.5);
+        for (let i = 1; i <= 3; i++) map.set(keyOf(tx, base + i, tz), { type: 'wood', powered: false });
+        for (let lx = -1; lx <= 1; lx++) {
+          for (let lz = -1; lz <= 1; lz++) {
+            map.set(keyOf(tx + lx, base + 4, tz + lz), { type: 'leaves', powered: false });
+          }
+        }
+      });
+    }
+
+    function generateBunnyDimension() {
+      const map = worlds.bunny;
+      map.clear();
+      const R = 15;
+      for (let x = -R; x <= R; x++) {
+        for (let z = -R; z <= R; z++) {
+          map.set(keyOf(x, 0, z), { type: 'grass', powered: false });
+        }
+      }
+      // Giant Carrots
+      [[6, 6], [-7, 5], [5, -8]].forEach(([cx, cz]) => {
+        for (let y = 1; y <= 4; y++) map.set(keyOf(cx, y, cz), { type: 'carrot', powered: false });
+        map.set(keyOf(cx, 5, cz), { type: 'leaves', powered: false });
+      });
+      // Return Portal near spawn
+      buildPortalFrame(map, 0, 1, -5, true);
+    }
+
+    function buildPortalFrame(map, cx, cy, cz, lit) {
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = 0; dy <= 3; dy++) {
+          const isEdge = dx === -1 || dx === 1 || dy === 0 || dy === 3;
+          if (isEdge) {
+            map.set(keyOf(cx + dx, cy + dy, cz), { type: 'carrot', powered: false });
+          } else if (lit) {
+            map.set(keyOf(cx + dx, cy + dy, cz), { type: 'portal', powered: false });
+          }
+        }
+      }
+    }
+
+    function spawnBunnies() {
+      for (let i = 0; i < 6; i++) {
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.8), materials.bunny);
+        const ear1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.45, 0.12), materials.bunny);
+        const ear2 = ear1.clone();
+        ear1.position.set(-0.15, 0.45, 0.25);
+        ear2.position.set(0.15, 0.45, 0.25);
+        g.add(body, ear1, ear2);
+        g.position.set((Math.random() - 0.5) * 18, 0.75, (Math.random() - 0.5) * 18);
+        entityGroup.add(g);
+        bunnies.push({ mesh: g, dir: Math.random() * Math.PI * 2, phase: Math.random() * 6 });
+      }
+    }
+
+    // --- Electric Circuits (Generator -> Wire -> Piston) ---
+    function evaluateCircuits() {
+      const map = getMap();
+      const poweredKeys = new Set();
+      const queue = [];
+
+      for (const [k, d] of map.entries()) {
+        if (d.type === 'generator') {
+          poweredKeys.add(k);
+          queue.push(parseKey(k));
+        }
+      }
+
+      const dirs = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+      while (queue.length) {
+        const [x, y, z] = queue.shift();
+        for (const [dx, dy, dz] of dirs) {
+          const nk = keyOf(x + dx, y + dy, z + dz);
+          if (!poweredKeys.has(nk) && map.has(nk)) {
+            const nd = map.get(nk);
+            if (nd.type === 'wire' || nd.type === 'piston') {
+              poweredKeys.add(nk);
+              if (nd.type === 'wire') queue.push([x + dx, y + dy, z + dz]);
+            }
+          }
+        }
+      }
+
+      for (const [k, d] of map.entries()) {
+        const isPow = poweredKeys.has(k);
+        if (d.type === 'wire' && d.powered !== isPow) {
+          d.powered = isPow;
+          d.mesh.material = isPow ? materials.wireOn : materials.wire;
+        }
+        if (d.type === 'piston' && d.powered !== isPow) {
+          d.powered = isPow;
+          const [px, py, pz] = parseKey(k);
+          if (isPow && !d.extended) {
+            d.extended = true;
+            d.mesh.scale.y = 1.6;
+            d.mesh.position.y = py + 0.3;
+            const aboveKey = keyOf(px, py + 1, pz);
+            const twoAboveKey = keyOf(px, py + 2, pz);
+            if (map.has(aboveKey) && !map.has(twoAboveKey)) {
+              const aboveData = map.get(aboveKey);
+              setBlock(px, py + 2, pz, aboveData.type, false);
+              setBlock(px, py + 1, pz, null, false);
+            }
+          } else if (!isPow && d.extended) {
+            d.extended = false;
+            d.mesh.scale.y = 1.0;
+            d.mesh.position.y = py;
+          }
+        }
+      }
+    }
+
+    // --- Portal Activation & Teleport ---
+    function tryActivatePortal(hx, hy, hz) {
+      const map = getMap();
+      for (const [dx, dy, dz] of [[0,0,0],[0,1,0],[0,-1,0],[1,0,0],[-1,0,0],[0,0,1],[0,0,-1]]) {
+        const cx = hx + dx, cy = hy + dy, cz = hz + dz;
+        if (!map.has(keyOf(cx, cy, cz))) {
+          const hasLeft = map.get(keyOf(cx - 1, cy, cz))?.type === 'carrot';
+          const hasRight = map.get(keyOf(cx + 1, cy, cz))?.type === 'carrot';
+          const hasBottom = map.get(keyOf(cx, cy - 1, cz))?.type === 'carrot';
+          const hasTop = map.get(keyOf(cx, cy + 2, cz))?.type === 'carrot' || map.get(keyOf(cx, cy + 1, cz))?.type === 'carrot';
+          if (hasLeft && hasRight && hasBottom && hasTop) {
+            setBlock(cx, cy, cz, 'portal', false);
+            if (!map.has(keyOf(cx, cy + 1, cz))) setBlock(cx, cy + 1, cz, 'portal', false);
+            showToast('Bunny Portal Opened!');
+            return true;
+          }
+        }
+      }
+      showToast('Build a Carrot block frame first!');
+      return false;
+    }
+
+    function switchDimension() {
+      currentDim = currentDim === 'overworld' ? 'bunny' : 'overworld';
+      document.getElementById('btn-dim').textContent = currentDim === 'overworld' ? 'Overworld' : 'Bunny World';
+      if (currentDim === 'bunny' && worlds.bunny.size === 0) generateBunnyDimension();
+      rebuildSceneFromMap();
+      player.pos.set(0, 4, 2);
+      player.vel.set(0, 0, 0);
+      showToast(currentDim === 'bunny' ? 'Welcome to Bunny Dimension!' : 'Returned to Overworld');
+    }
+
+    // --- Rollercoaster System ---
+    function spawnCoasterCart(x, y, z) {
+      const map = getMap();
+      const tracks = [];
+      for (const [k, d] of map.entries()) {
+        if (d.type === 'rail' || d.type === 'loop') {
+          const [tx, ty, tz] = parseKey(k);
+          tracks.push({ x: tx, y: ty, z: tz, type: d.type });
+        }
+      }
+      if (!tracks.length) {
+        showToast('Place Track pieces first!');
+        return;
+      }
+      tracks.sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z));
+      cartPath = [tracks[0]];
+      const used = new Set([keyOf(tracks[0].x, tracks[0].y, tracks[0].z)]);
+      let curr = tracks[0];
+      while (true) {
+        const next = tracks.find(t => !used.has(keyOf(t.x, t.y, t.z)) && Math.hypot(t.x - curr.x, t.y - curr.y, t.z - curr.z) <= 1.8);
+        if (!next) break;
+        used.add(keyOf(next.x, next.y, next.z));
+        cartPath.push(next);
+        curr = next;
+      }
+
+      if (coasterCart) entityGroup.remove(coasterCart);
+      coasterCart = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.5, 1.1), new THREE.MeshLambertMaterial({ color: 0xe53935 }));
+      entityGroup.add(coasterCart);
+      cartProgress = 0;
+      ridingCart = true;
+      document.getElementById('btn-exit-cart').style.display = 'inline-block';
+      showToast('Riding Rollercoaster!');
+    }
+
+    // --- Player & Solid AABB Collisions ---
+    const player = {
+      pos: new THREE.Vector3(0, 5, 0),
+      vel: new THREE.Vector3(0, 0, 0),
+      yaw: 0, pitch: 0,
+      flying: false, onGround: false,
+      radius: 0.32, height: 1.65
+    };
+
+    function isSolidAt(bx, by, bz) {
+      const d = getMap().get(keyOf(bx, by, bz));
+      if (!d) return false;
+      const def = ITEMS.find(i => i.id === d.type);
+      return def ? !!def.solid : (d.type === 'leaves');
+    }
+
+    function collidesAt(pos) {
+      const minX = Math.floor(pos.x - player.radius);
+      const maxX = Math.floor(pos.x + player.radius);
+      const minY = Math.floor(pos.y);
+      const maxY = Math.floor(pos.y + player.height);
+      const minZ = Math.floor(pos.z - player.radius);
+      const maxZ = Math.floor(pos.z + player.radius);
+      for (let x = minX; x <= maxX; x++) {
+        for (let y = minY; y <= maxY; y++) {
+          for (let z = minZ; z <= maxZ; z++) {
+            if (isSolidAt(x, y, z)) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // --- Hotbar UI ---
+    let selectedSlot = 0;
+    const hotbarEl = document.getElementById('hotbar');
+    ITEMS.forEach((item, idx) => {
+      const btn = document.createElement('div');
+      btn.className = 'slot' + (idx === 0 ? ' selected' : '');
+      btn.innerHTML = `<div class="swatch" style="background:${item.color}"></div><span>${item.name}</span>`;
+      btn.addEventListener('click', () => {
+        selectedSlot = idx;
+        document.querySelectorAll('.slot').forEach((s, i) => s.classList.toggle('selected', i === idx));
+      });
+      hotbarEl.appendChild(btn);
+    });
+
+    // --- Raycasting for Block Break & Place ---
+    const raycaster = new THREE.Raycaster();
+    raycaster.far = 7;
+
+    function getTargetBlock() {
+      raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+      const meshes = [];
+      for (const d of getMap().values()) meshes.push(d.mesh);
+      const hits = raycaster.intersectObjects(meshes, true);
+      if (!hits.length) return null;
+      let obj = hits[0].object;
+      while (obj && !obj.userData?.type && obj.parent) obj = obj.parent;
+      if (!obj || !obj.userData?.type) return null;
+      return { data: obj.userData, normal: hits[0].face.normal };
+    }
+
+    document.getElementById('btn-break').addEventListener('click', () => {
+      const hit = getTargetBlock();
+      if (hit) setBlock(hit.data.x, hit.data.y, hit.data.z, null);
+    });
+
+    document.getElementById('btn-place').addEventListener('click', () => {
+      const item = ITEMS[selectedSlot];
+      const hit = getTargetBlock();
+      if (!hit) return;
+      const nx = hit.data.x + Math.round(hit.normal.x);
+      const ny = hit.data.y + Math.round(hit.normal.y);
+      const nz = hit.data.z + Math.round(hit.normal.z);
+
+      if (item.id === 'activator') {
+        tryActivatePortal(nx, ny, nz);
+        return;
+      }
+      if (item.id === 'cart') {
+        spawnCoasterCart(hit.data.x, hit.data.y, hit.data.z);
+        return;
+      }
+      const testPos = player.pos.clone();
+      setBlock(nx, ny, nz, item.id);
+      if (collidesAt(testPos)) setBlock(nx, ny, nz, null);
+    });
+
+    // --- Controls (Touch Joystick, Camera Drag, Fly, Jump, Keyboard) ---
+    let moveInput = { x: 0, z: 0 };
+    const joyZone = document.getElementById('joy-zone');
+    const joyKnob = document.getElementById('joy-knob');
+    let joyTouchId = null;
+
+    joyZone.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const t = e.changedTouches[0];
+      joyTouchId = t.identifier;
+      updateJoystick(t);
+    }, { passive: false });
+
+    joyZone.addEventListener('touchmove', e => {
+      e.preventDefault();
+      for (const t of e.changedTouches) {
+        if (t.identifier === joyTouchId) updateJoystick(t);
+      }
+    }, { passive: false });
+
+    function resetJoystick() {
+      joyTouchId = null;
+      moveInput.x = 0; moveInput.z = 0;
+      joyKnob.style.transform = 'translate(0px, 0px)';
+    }
+    joyZone.addEventListener('touchend', resetJoystick);
+    joyZone.addEventListener('touchcancel', resetJoystick);
+
+    function updateJoystick(t) {
+      const rect = joyZone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      let dx = t.clientX - cx, dy = t.clientY - cy;
+      const dist = Math.hypot(dx, dy);
+      const maxR = 36;
+      if (dist > maxR) { dx = (dx / dist) * maxR; dy = (dy / dist) * maxR; }
+      joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+      moveInput.x = dx / maxR;
+      moveInput.z = dy / maxR;
+    }
+
+    // Screen Drag Camera Look
+    let lookTouchId = null, lastLookX = 0, lastLookY = 0;
+    canvas.addEventListener('touchstart', e => {
+      const t = e.changedTouches[0];
+      lookTouchId = t.identifier;
+      lastLookX = t.clientX; lastLookY = t.clientY;
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', e => {
+      for (const t of e.changedTouches) {
+        if (t.identifier === lookTouchId) {
+          player.yaw -= (t.clientX - lastLookX) * 0.0065;
+          player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch - (t.clientY - lastLookY) * 0.0065));
+          lastLookX = t.clientX; lastLookY = t.clientY;
+        }
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchend', e => {
+      for (const t of e.changedTouches) if (t.identifier === lookTouchId) lookTouchId = null;
+    });
+
+    // Dedicated Fly Toggle + Double-Tap Jump
+    const btnFly = document.getElementById('btn-fly');
+    const btnDown = document.getElementById('btn-down');
+    function toggleFly() {
+      player.flying = !player.flying;
+      player.vel.y = 0;
+      btnFly.textContent = player.flying ? 'Fly: ON' : 'Fly: OFF';
+      btnFly.classList.toggle('fly-on', player.flying);
+      btnDown.style.display = player.flying ? 'flex' : 'none';
+    }
+    btnFly.addEventListener('click', toggleFly);
+
+    let jumpHeld = false, downHeld = false, lastJumpTap = 0;
+    const btnJump = document.getElementById('btn-jump');
+    btnJump.addEventListener('touchstart', e => {
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastJumpTap < 300) toggleFly();
+      lastJumpTap = now;
+      jumpHeld = true;
+      if (!player.flying && player.onGround) { player.vel.y = 7.2; player.onGround = false; }
+    }, { passive: false });
+    btnJump.addEventListener('touchend', () => jumpHeld = false);
+    btnJump.addEventListener('mousedown', () => {
+      jumpHeld = true;
+      if (!player.flying && player.onGround) { player.vel.y = 7.2; player.onGround = false; }
+    });
+    btnJump.addEventListener('mouseup', () => jumpHeld = false);
+
+    btnDown.addEventListener('touchstart', e => { e.preventDefault(); downHeld = true; }, { passive: false });
+    btnDown.addEventListener('touchend', () => downHeld = false);
+    btnDown.addEventListener('mousedown', () => downHeld = true);
+    btnDown.addEventListener('mouseup', () => downHeld = false);
+
+    document.getElementById('btn-exit-cart').addEventListener('click', () => {
+      ridingCart = false;
+      document.getElementById('btn-exit-cart').style.display = 'none';
+    });
+
+    // --- Save / Load / Reset ---
+    document.getElementById('btn-save').addEventListener('click', () => {
+      const payload = {
+        dim: currentDim,
+        pos: player.pos.toArray(),
+        overworld: Array.from(worlds.overworld.entries()).map(([k, v]) => [k, v.type]),
+        bunny: Array.from(worlds.bunny.entries()).map(([k, v]) => [k, v.type])
+      };
+      localStorage.setItem('voxel_sandbox_save', JSON.stringify(payload));
+      showToast('World Saved!');
+    });
+
+    document.getElementById('btn-load').addEventListener('click', () => {
+      const raw = localStorage.getItem('voxel_sandbox_save');
+      if (!raw) { showToast('No saved world found'); return; }
+      const data = JSON.parse(raw);
+      worlds.overworld.clear();
+      data.overworld.forEach(([k, type]) => worlds.overworld.set(k, { type, powered: false }));
+      worlds.bunny.clear();
+      data.bunny.forEach(([k, type]) => worlds.bunny.set(k, { type, powered: false }));
+      currentDim = data.dim || 'overworld';
+      document.getElementById('btn-dim').textContent = currentDim === 'overworld' ? 'Overworld' : 'Bunny World';
+      player.pos.fromArray(data.pos || [0, 5, 0]);
+      rebuildSceneFromMap();
+      showToast('Saved World Loaded!');
+    });
+
+    document.getElementById('btn-reset').addEventListener('click', () => {
+      currentDim = 'overworld';
+      document.getElementById('btn-dim').textContent = 'Overworld';
+      generateOverworld();
+      rebuildSceneFromMap();
+      player.pos.set(0, 5, 0);
+      showToast('New World Created!');
+    });
+
+    // --- Main Loop ---
+    generateOverworld();
+    rebuildSceneFromMap();
+
+    let lastTime = performance.now();
+    let portalCooldown = 0;
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min((now - lastTime) / 1000, 0.05);
+      lastTime = now;
+      if (portalCooldown > 0) portalCooldown -= dt;
+
+      // Update Bunnies
+      for (const b of bunnies) {
+        b.phase += dt * 5;
+        b.mesh.position.y = 0.75 + Math.abs(Math.sin(b.phase)) * 0.45;
+        b.mesh.position.x += Math.cos(b.dir) * dt * 1.2;
+        b.mesh.position.z += Math.sin(b.dir) * dt * 1.2;
+        if (Math.abs(b.mesh.position.x) > 12 || Math.abs(b.mesh.position.z) > 12) b.dir += Math.PI;
+      }
+
+      // Update Rollercoaster Cart
+      if (ridingCart && coasterCart && cartPath.length > 0) {
+        cartProgress = (cartProgress + dt * 3.5) % cartPath.length;
+        const idx = Math.floor(cartProgress);
+        const frac = cartProgress - idx;
+        const curr = cartPath[idx];
+        const next = cartPath[(idx + 1) % cartPath.length];
+        if (curr.type === 'loop') {
+          const a = frac * Math.PI * 2;
+          const r = 2.0;
+          coasterCart.position.set(curr.x, curr.y + Math.sin(a) * r + r, curr.z + Math.cos(a) * r);
+        } else {
+          coasterCart.position.set(
+            curr.x + (next.x - curr.x) * frac,
+            curr.y + (next.y - curr.y) * frac - 0.1,
+            curr.z + (next.z - curr.z) * frac
+          );
+        }
+        player.pos.copy(coasterCart.position);
+      } else {
+        // Player Movement & AABB Collision
+        const speed = player.flying ? 8.5 : 5.2;
+        const sinY = Math.sin(player.yaw), cosY = Math.cos(player.yaw);
+        const vx = (moveInput.x * cosY + moveInput.z * sinY) * speed;
+        const vz = (moveInput.z * cosY - moveInput.x * sinY) * speed;
+
+        if (player.flying) {
+          player.vel.y = jumpHeld ? 6.5 : (downHeld ? -6.5 : 0);
+        } else {
+          player.vel.y -= 18 * dt;
+        }
+
+        // Axis-separated resolution
+        player.pos.x += vx * dt;
+        if (collidesAt(player.pos)) player.pos.x -= vx * dt;
+
+        player.pos.z += vz * dt;
+        if (collidesAt(player.pos)) player.pos.z -= vz * dt;
+
+        player.pos.y += player.vel.y * dt;
+        if (collidesAt(player.pos)) {
+          if (player.vel.y < 0) player.onGround = true;
+          player.pos.y -= player.vel.y * dt;
+          player.vel.y = 0;
+        } else {
+          player.onGround = false;
+        }
+
+        if (player.pos.y < -15) { player.pos.set(0, 6, 0); player.vel.set(0, 0, 0); }
+      }
+
+      // Check Portal Stepping
+      const px = Math.round(player.pos.x), py = Math.round(player.pos.y + 0.5), pz = Math.round(player.pos.z);
+      if (portalCooldown <= 0 && getMap().get(keyOf(px, py, pz))?.type === 'portal') {
+        portalCooldown = 2.5;
+        switchDimension();
+      }
+
+      camera.position.set(player.pos.x, player.pos.y + 1.45, player.pos.z);
+      camera.rotation.y = player.yaw;
+      camera.rotation.x = player.pitch;
+
+      renderer.render(scene, camera);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
