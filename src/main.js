@@ -857,7 +857,8 @@ function renderHotbar() {
   const more = document.createElement('button');
   more.className = 'slot more';
   more.setAttribute('aria-label', 'All blocks');
-  more.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" fill="currentColor"/></svg>';
+  more.title = 'All blocks (E)';
+  more.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" fill="currentColor"/></svg><span class="num">E</span>';
   more.addEventListener('click', openInventory);
   bar.appendChild(more);
 }
@@ -923,6 +924,13 @@ function closeSheet(id) {
   $(id).classList.remove('on');
   openSheetId = null;
   if (state.started) state.paused = false;
+  grabMouse();
+}
+
+/** Desktop: capture the mouse for looking around (only works inside a click or key press). */
+function grabMouse() {
+  if (input.touchMode || !state.started || state.paused || document.pointerLockElement) return;
+  try { const r = input.layer.requestPointerLock?.(); r?.catch?.(() => {}); } catch { /* needs a user gesture */ }
 }
 
 function updateDimChip() {
@@ -978,6 +986,8 @@ holdButton($('btn-jump'), () => {
 holdButton($('btn-down'), () => { downHeld = true; }, () => { downHeld = false; });
 $('btn-fly').addEventListener('click', toggleFly);
 $('btn-undo').addEventListener('click', () => undo());
+$('btn-keys-hide').addEventListener('click', toggleKeys);
+$('keys-show').addEventListener('click', toggleKeys);
 $('mode-build').addEventListener('click', () => setMode(false));
 $('mode-break').addEventListener('click', () => setMode(true));
 $('btn-exit').addEventListener('click', () => stopRide());
@@ -1013,6 +1023,7 @@ function startGame() {
   state.paused = false;
   input.reset();
   input.restJoystick();
+  grabMouse();
   let seen = false;
   try { seen = !!localStorage.getItem('mycraft.seenHelp'); localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
   if (!seen) {
@@ -1023,7 +1034,7 @@ function startGame() {
       document.body.classList.add('coaching');
       setTimeout(() => document.body.classList.remove('coaching'), 9000);
       setTimeout(() => celebrate({ kicker: 'Hi friend!', title: "Let's build something amazing", line: 'Tip: pick the Cart and tap the track for a ride.', ms: 4500 }), 9500);
-    } else setTimeout(() => toast('Click to play. Left click breaks, right click builds'), 600);
+    } else setTimeout(() => toast('Click the world to look around. Your controls are bottom left'), 600);
   } else if (!state.welcomed) {
     setTimeout(() => celebrate({ kicker: 'Welcome back, friend!', title: welcomeFact(), ms: 4200 }), 700);
   }
@@ -1055,6 +1066,12 @@ for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) {
 // ---------------------------------------------------------------------------------------------------------
 // Input wiring
 
+let unlockedAt = 0;
+function toggleKeys() {
+  settings.keysHidden = !settings.keysHidden;
+  document.body.classList.toggle('keys-hidden', !!settings.keysHidden);
+  saveSettings(settings);
+}
 const input = new Input($('touch-layer'), {
   isPaused: () => state.paused,
   canLock: () => state.started && !state.paused,
@@ -1080,8 +1097,9 @@ const input = new Input($('touch-layer'), {
   },
   onWheel: (d) => selectSlot(state.slot + d),
   onLockChange: (locked) => {
+    // Desktop: Esc frees the mouse so the hotbar and buttons can be clicked; clicking the world locks it again.
     document.body.classList.toggle('locked', locked);
-    if (!locked && state.started && !state.paused && !openSheetId && !input.touchMode) openSheet('menu');
+    if (!locked) unlockedAt = performance.now();
   },
   onKey: (e) => {
     if (e.code.startsWith('Digit')) { const n = Number(e.code.slice(5)) - 1; if (n >= 0 && n < 9) selectSlot(n); }
@@ -1089,14 +1107,19 @@ const input = new Input($('touch-layer'), {
     if (e.code === 'KeyE') { if (openSheetId === 'inventory') closeSheet('inventory'); else if (state.started) openInventory(); }
     if (e.code === 'KeyM') $('tog-music').click();
     if (e.code === 'KeyQ' && coaster.riding) stopRide();
-    if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && state.started) undo();
+    if (e.code === 'KeyZ' && state.started && !openSheetId && !coaster.riding) undo();
+    if (e.code === 'KeyH') toggleKeys();
     if (e.code === 'Space') {
       const now = performance.now();
       if (!e.repeat && now - lastJumpTap < 280) toggleFly();
       if (!e.repeat) lastJumpTap = now;
       if (coaster.riding) stopRide();
     }
-    if (e.code === 'Escape' && openSheetId) closeSheet(openSheetId);
+    if (e.code === 'Escape') {
+      if (openSheetId) closeSheet(openSheetId);
+      // the first Esc only frees the mouse (handled by the browser); a second one opens the menu
+      else if (state.started && !input.locked && performance.now() - unlockedAt > 400) openSheet('menu');
+    }
   },
 });
 input.sensitivity = settings.sensitivity;
@@ -1180,6 +1203,7 @@ function boot() {
   setToggle('tog-music', settings.music);
   setToggle('tog-sfx', settings.sfx);
   setToggle('tog-day', settings.daynight);
+  document.body.classList.toggle('keys-hidden', !!settings.keysHidden);
   dayNight.enabled = settings.daynight;
   updateUndoUI();
   updateStickerCount();
