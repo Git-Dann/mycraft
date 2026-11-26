@@ -40,8 +40,8 @@
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 5L4 10l5 5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 10h10a6 6 0 0 1 0 12h-3" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
           </button>
           <div class="seg" role="group" aria-label="What a tap does">
-            <button id="mode-build" aria-pressed="true" aria-label="Tap builds"><svg viewBox="0 0 24 24" width="22" height="22"><rect x="5" y="9" width="10" height="10" rx="1.5" fill="currentColor" opacity="0.85"/><path d="M15 4v6M12 7h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
-            <button id="mode-break" aria-pressed="false" aria-label="Tap breaks"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 20l9-9" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M7 6c4-3 9-2 12 2l-3 1c-2-2-5-3-8-2z" fill="currentColor"/></svg></button>
+            <button id="mode-build" aria-pressed="true" aria-label="Tap builds"><svg aria-hidden="true" viewBox="0 0 24 24" width="22" height="22"><rect x="5" y="9" width="10" height="10" rx="1.5" fill="currentColor" opacity="0.85"/><path d="M15 4v6M12 7h6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg><span>Build</span></button>
+            <button id="mode-break" aria-pressed="false" aria-label="Tap breaks"><svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 20l9-9" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M7 6c4-3 9-2 12 2l-3 1c-2-2-5-3-8-2z" fill="currentColor"/></svg><span>Break</span></button>
           </div>
         </div>
         <button class="pill danger" id="btn-exit">Hop off</button>
@@ -49,9 +49,18 @@
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="item-label"></div>
       <div class="pad">
-        <button class="sat" id="btn-fly" aria-pressed="false" aria-label="Fly"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 13c4-1 6-4 9-8 1 4 4 7 9 8-5 1-7 3-9 6-2-3-4-5-9-6z" fill="currentColor"/></svg><span>Fly</span></button>
-        <button class="sat" id="btn-down" aria-label="Fly down"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-        <button class="big" id="btn-jump" aria-label="Jump"><svg viewBox="0 0 24 24" width="28" height="28"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <button class="act" id="btn-fly" aria-pressed="false" aria-label="Fly">
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M12 15.5C10.4 11.6 6.8 8.6 2 8c.6 4.4 4.2 7.6 10 7.5zM12 15.5c1.6-3.9 5.2-6.9 10-7.5-.6 4.4-4.2 7.6-10 7.5z" fill="currentColor"/><path d="M5.5 11.2c1.6.5 3 1.3 4.2 2.4M18.5 11.2c-1.6.5-3 1.3-4.2 2.4" stroke="#fffaf3" stroke-width="1.1" stroke-linecap="round" opacity="0.7"/><circle cx="12" cy="17.6" r="1.6" fill="currentColor"/></svg>
+          <span id="fly-label">Fly</span>
+        </button>
+        <button class="act big" id="btn-jump" aria-label="Jump">
+          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+          <span id="jump-label">Jump</span>
+        </button>
+        <button class="act" id="btn-down" aria-label="Fly down">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 20h14" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+          <span>Down</span>
+        </button>
       </div>
       <div id="hotbar" role="toolbar" aria-label="Hotbar"></div>
     </div>
@@ -113,7 +122,7 @@
               <li><b>Look:</b> drag with your right thumb, at the same time if you like</li>
               <li><b>Build:</b> tap where you want a block</li>
               <li><b>Break:</b> press and hold a block</li>
-              <li><b>Fly:</b> double-tap jump, or the Fly button</li>
+              <li><b>Fly:</b> tap Fly (or double-tap Jump). Then Up and Down move you, and Land puts you back on your feet</li>
               <li><b>Build or break:</b> the switch at the top right changes what a tap does</li>
               <li><b>Undo:</b> the arrow at the top right takes back your last build or break</li>
             </ul>

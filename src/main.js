@@ -699,9 +699,13 @@ function updateDimChip() {
 }
 
 function updateFlyUI() {
-  $('btn-fly').classList.toggle('on', player.flying);
-  $('btn-fly').setAttribute('aria-pressed', String(player.flying));
-  document.body.classList.toggle('flying', player.flying);
+  const f = player.flying;
+  $('btn-fly').setAttribute('aria-pressed', String(f));
+  $('btn-fly').setAttribute('aria-label', f ? 'Stop flying' : 'Fly');
+  $('fly-label').textContent = f ? 'Land' : 'Fly';
+  $('jump-label').textContent = f ? 'Up' : 'Jump';
+  $('btn-jump').setAttribute('aria-label', f ? 'Fly up' : 'Jump');
+  document.body.classList.toggle('flying', f);
 }
 
 function toggleFly() {
