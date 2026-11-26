@@ -70,7 +70,7 @@ export class Input {
     this.h.onAnyTouch?.();
     const leftZone = e.clientX < window.innerWidth * 0.42 && e.clientY > window.innerHeight * 0.3;
     if (leftZone && !this.joy) {
-      this.joy = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      this.joy = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), far: 0 };
       this.joyEl.style.transform = `translate(${e.clientX - 60}px, ${e.clientY - 60}px)`;
       this.joyEl.classList.add('on');
       this.knobEl.style.transform = 'translate(0px, 0px)';
@@ -90,6 +90,7 @@ export class Input {
     l.lastBreak = performance.now();
     this.holdEl.style.transform = `translate(${l.x - 28}px, ${l.y - 28}px)`;
     this.holdEl.classList.add('on');
+    navigator.vibrate?.(10);
     this.h.onHold?.(l.x, l.y);
   }
 
@@ -97,6 +98,7 @@ export class Input {
     if (this.joy && e.pointerId === this.joy.id) {
       let dx = e.clientX - this.joy.x, dy = e.clientY - this.joy.y;
       const d = Math.hypot(dx, dy), max = 46;
+      this.joy.far = Math.max(this.joy.far, d);
       if (d > max) { dx = (dx / d) * max; dy = (dy / d) * max; }
       this.knobEl.style.transform = `translate(${dx}px, ${dy}px)`;
       // gentle dead zone + response curve for fine control
@@ -131,6 +133,9 @@ export class Input {
 
   pup(e, cancel) {
     if (this.joy && e.pointerId === this.joy.id) {
+      // A quick tap in the joystick area builds there, like anywhere else on screen
+      const j = this.joy;
+      if (!cancel && j.far < TAP_MOVE && performance.now() - j.t < 300) this.h.onTap?.(j.x, j.y);
       this.joy = null;
       this.move.x = this.move.z = 0;
       this.joyEl.classList.remove('on');

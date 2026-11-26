@@ -38,6 +38,7 @@
       <div class="pad">
         <button class="small" id="btn-mode" aria-label="Tap action"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M5 19l9-9M13 5l6 6-3 3-6-6z" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Build</span></button>
         <button class="small" id="btn-fly" aria-pressed="false" aria-label="Fly"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M3 13c4-1 6-4 9-8 1 4 4 7 9 8-5 1-7 3-9 6-2-3-4-5-9-6z" fill="currentColor"/></svg><span>Fly</span></button>
+        <button class="small" id="btn-undo" aria-label="Undo"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12h-2" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(0 -3)"/></svg><span>Undo</span></button>
         <button class="big" id="btn-down" aria-label="Fly down"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="big" id="btn-jump" aria-label="Jump"><svg viewBox="0 0 24 24" width="26" height="26"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
@@ -63,9 +64,11 @@
     <div class="sheet" id="menu" role="dialog" aria-modal="true" aria-label="Menu">
       <div class="card">
         <div class="logo small-logo"></div>
+        <p class="credit">Created by <b>Oliver</b></p>
         <button class="pill primary" id="btn-resume">Back to building</button>
         <div class="toggle-row"><span>Music</span><button class="toggle" id="tog-music" role="switch" aria-checked="true"><i></i></button></div>
         <div class="toggle-row"><span>Sounds</span><button class="toggle" id="tog-sfx" role="switch" aria-checked="true"><i></i></button></div>
+        <label class="toggle-row" for="look-speed"><span>Look speed</span><input type="range" id="look-speed" min="0.4" max="2" step="0.1" value="1" /></label>
         <div class="row">
           <button class="pill" id="btn-save">Save now</button>
           <button class="pill" id="btn-help">How to play</button>
