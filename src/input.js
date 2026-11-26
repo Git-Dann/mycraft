@@ -139,6 +139,8 @@ export class Input {
       this.joy = null;
       this.move.x = this.move.z = 0;
       this.joyEl.classList.remove('on');
+      this.knobEl.style.transform = 'translate(0px, 0px)';
+      this.restJoystick();
       return;
     }
     const l = this.look;
@@ -183,6 +185,18 @@ export class Input {
     this.move.x = this.move.z = 0;
     this.joyEl.classList.remove('on');
     this.holdEl.classList.remove('on');
+    this.knobEl.style.transform = 'translate(0px, 0px)';
     clearTimeout(this.holdTimer);
+    this.restJoystick();
+  }
+
+  /** Parks the joystick at its resting spot (bottom-left, clear of the hotbar) so players can see where to put a thumb. */
+  restJoystick() {
+    if (this.joy) return;
+    const bar = document.getElementById('hotbar').getBoundingClientRect();
+    const left = 24 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--safe-left')) || 0);
+    const clearOfBar = bar.width === 0 || bar.left > left + 130;
+    const bottom = clearOfBar ? innerHeight - 24 : bar.top - 18;
+    this.joyEl.style.transform = `translate(${left}px, ${bottom - 120}px)`;
   }
 }

@@ -43,6 +43,7 @@ function voice(rootPc, quality, prev) {
 }
 
 export class Audio {
+  // NB: window.Audio (the HTML element) is used explicitly inside this class to avoid the name clash.
   constructor() {
     this.ctx = null;
     this.musicOn = true;
@@ -55,9 +56,17 @@ export class Audio {
     this.cart = null;
   }
 
+  /**
+   * Must be called from inside a user gesture (tap/click/key). Safe to call on every gesture:
+   * iOS can suspend or interrupt the context at any time (calls, Control Centre, backgrounding).
+   */
   unlock() {
+    // iPhone: without this, the ring/silent switch mutes all Web Audio. 'playback' makes the game
+    // behave like a music app (Safari 16.4+), and the silent <audio> loop does the same on older iOS.
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* unsupported */ }
+    this.startSilentLoop();
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -73,10 +82,42 @@ export class Audio {
     this.sfx.connect(this.master);
     this.buildNoise();
     this.buildMusic();
+    // iOS sometimes needs a buffer to be played inside the gesture before the context makes sound
+    const kick = ctx.createBufferSource();
+    kick.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    kick.connect(ctx.destination);
+    kick.start(0);
+    if (ctx.state !== 'running') ctx.resume().catch(() => {});
     document.addEventListener('visibilitychange', () => {
       if (!this.ctx) return;
-      if (document.hidden) this.ctx.suspend(); else this.ctx.resume();
+      if (document.hidden) {
+        this.ctx.suspend();
+        this.silent?.pause();
+      } else this.ctx.resume().catch(() => {});
     });
+  }
+
+  startSilentLoop() {
+    if (this.silent) {
+      if (this.silent.paused) this.silent.play().catch(() => {});
+      return;
+    }
+    // 0.5 s of silence as a WAV blob, looped quietly. Playing a media element moves iOS Safari into the
+    // "playback" audio category, so Web Audio is no longer muted by the silent switch.
+    const sr = 8000, n = sr / 2;
+    const buf = new ArrayBuffer(44 + n * 2);
+    const v = new DataView(buf);
+    const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+    str(36, 'data'); v.setUint32(40, n * 2, true);
+    const el = new window.Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })));
+    el.loop = true;
+    el.setAttribute('playsinline', '');
+    el.preload = 'auto';
+    this.silent = el;
+    el.play().catch(() => {});
   }
 
   buildNoise() {

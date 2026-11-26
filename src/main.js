@@ -38,12 +38,54 @@ const audio = new Audio();
 const coaster = new Coaster(scene, audio);
 const bunnies = new Bunnies(scene, audio);
 
-const highlight = new THREE.LineSegments(
-  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.004, 1.004, 1.004)),
-  new THREE.LineBasicMaterial({ color: 0x2a302c, transparent: true, opacity: 0.55 }),
+// Soft selector: a glowing outline and faint fill over the targeted block, plus a see-through
+// "ghost" of the selected block where it will be placed.
+const highlight = new THREE.Group();
+const selEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1.012, 1.012, 1.012)),
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 }),
 );
+const selFill = new THREE.Mesh(
+  new THREE.BoxGeometry(1.01, 1.01, 1.01),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.16, depthWrite: false }),
+);
+selEdges.renderOrder = 5;
+highlight.add(selFill, selEdges);
 highlight.visible = false;
 scene.add(highlight);
+const ghostMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false });
+const ghost = new THREE.Group();
+const ghostEdges = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+  new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
+);
+ghost.add(new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.98, 0.98), ghostMat), ghostEdges);
+ghost.visible = false;
+scene.add(ghost);
+const ghostScale = new THREE.Vector3();
+
+/** Shows the selector on a hit, and the ghost of the held block in the cell it would go into. */
+function showSelector(h, withGhost, now) {
+  highlight.visible = h.ok;
+  ghost.visible = false;
+  if (!h.ok) return;
+  highlight.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
+  const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+  selEdges.material.opacity = 0.65 + pulse * 0.3;
+  if (!withGhost) return;
+  const item = ITEM_BY_KEY[state.hotbar[state.slot]];
+  if (!item || item.tool) return;
+  const gx = h.x + h.nx, gy = h.y + h.ny, gz = h.z + h.nz;
+  if (!world.inBounds(gx, gy, gz) || (world.get(gx, gy, gz) && world.get(gx, gy, gz) !== B.portal)) return;
+  const def = BLOCKS[B[item.block]];
+  ghostMat.color.set(def.top);
+  // thin pieces (track, wire) get a flat ghost so it matches what will appear
+  const flat = def.shape === 'rail' || def.shape === 'loop' || def.shape === 'wire';
+  ghostScale.set(1, flat ? 0.12 : 1, 1);
+  ghost.scale.copy(ghostScale);
+  ghost.position.set(gx + 0.5, gy + (flat ? 0.06 : 0.5), gz + 0.5);
+  ghost.visible = true;
+}
 
 function resize() {
   renderer.setSize(innerWidth, innerHeight, false);
@@ -51,13 +93,14 @@ function resize() {
   camera.fov = innerWidth < innerHeight ? 80 : 72;
   camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize);
+addEventListener('resize', () => { resize(); try { input.restJoystick(); } catch { /* input not ready yet */ } });
 resize();
 
 // ---------------------------------------------------------------------------------------------------------
 // State
 
 const settings = loadSettings();
+if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
 const state = {
   seed: 0,
   dim: 'overworld',
@@ -599,23 +642,38 @@ function selectSlot(i) {
   audio.tap();
 }
 
+const INVENTORY_GROUPS = [
+  ['Building', ['grass', 'dirt', 'stone', 'log', 'planks', 'leaves', 'sand', 'brick', 'snow', 'glassy']],
+  ['Bunny Meadow', ['carrot', 'candy', 'pinkleaf', 'cloud', 'butter', 'mint', 'sky']],
+  ['Coaster', ['rail', 'loop', 'cart']],
+  ['Magic and electrics', ['key', 'generator', 'wire', 'piston', 'lamp']],
+];
+
 function openInventory() {
   const grid = $('inv-grid');
   grid.innerHTML = '';
-  for (const item of ITEMS) {
-    const b = document.createElement('button');
-    b.className = 'inv-item';
-    b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>`;
-    b.addEventListener('click', () => {
-      const existing = state.hotbar.indexOf(item.key);
-      if (existing >= 0) state.slot = existing;
-      else state.hotbar[state.slot] = item.key;
-      renderHotbar();
-      selectSlot(state.slot);
-      closeSheet('inventory');
-      state.needsSave = true;
-    });
-    grid.appendChild(b);
+  const current = state.hotbar[state.slot];
+  for (const [title, keys] of INVENTORY_GROUPS) {
+    const h = document.createElement('h3');
+    h.className = 'inv-group';
+    h.textContent = title;
+    grid.appendChild(h);
+    for (const key of keys) {
+      const item = ITEM_BY_KEY[key];
+      const b = document.createElement('button');
+      b.className = 'inv-item' + (key === current ? ' sel' : '');
+      b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>`;
+      b.addEventListener('click', () => {
+        const existing = state.hotbar.indexOf(item.key);
+        if (existing >= 0) state.slot = existing;
+        else state.hotbar[state.slot] = item.key;
+        renderHotbar();
+        selectSlot(state.slot);
+        closeSheet('inventory');
+        state.needsSave = true;
+      });
+      grid.appendChild(b);
+    }
   }
   openSheet('inventory');
 }
@@ -654,8 +712,15 @@ function toggleFly() {
 }
 
 function updateModeUI() {
-  $('btn-mode').classList.toggle('on', state.tapBreaks);
-  $('btn-mode').querySelector('span').textContent = state.tapBreaks ? 'Break' : 'Build';
+  $('mode-build').setAttribute('aria-pressed', String(!state.tapBreaks));
+  $('mode-break').setAttribute('aria-pressed', String(state.tapBreaks));
+}
+function setMode(breaks) {
+  if (state.tapBreaks === breaks) return;
+  state.tapBreaks = breaks;
+  updateModeUI();
+  audio.tap();
+  toast(breaks ? 'Tap now breaks blocks' : 'Tap now builds blocks');
 }
 
 let jumpHeld = false, downHeld = false, lastJumpTap = 0;
@@ -677,7 +742,8 @@ holdButton($('btn-jump'), () => {
 holdButton($('btn-down'), () => { downHeld = true; }, () => { downHeld = false; });
 $('btn-fly').addEventListener('click', toggleFly);
 $('btn-undo').addEventListener('click', () => undo());
-$('btn-mode').addEventListener('click', () => { state.tapBreaks = !state.tapBreaks; updateModeUI(); audio.tap(); });
+$('mode-build').addEventListener('click', () => setMode(false));
+$('mode-break').addEventListener('click', () => setMode(true));
 $('btn-exit').addEventListener('click', () => stopRide());
 $('btn-menu').addEventListener('click', () => openSheet('menu'));
 $('btn-resume').addEventListener('click', () => closeSheet('menu'));
@@ -708,19 +774,30 @@ function startGame() {
   state.started = true;
   state.paused = false;
   input.reset();
-  if (!localStorage.getItem('mycraft.seenHelp')) {
-    try { localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
-    setTimeout(() => toast(input.touchMode ? 'Tap to build, hold to break. Try the Cart on the track!' : 'Click to play. Left click breaks, right click builds'), 600);
+  input.restJoystick();
+  let seen = false;
+  try { seen = !!localStorage.getItem('mycraft.seenHelp'); localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
+  if (!seen) {
+    if (input.touchMode) {
+      // Point at the two thumbs' jobs until the player has tried both
+      const j = $('joy').getBoundingClientRect();
+      $('coach-move').style.top = `${Math.max(60, j.top - 64)}px`;
+      document.body.classList.add('coaching');
+      setTimeout(() => document.body.classList.remove('coaching'), 9000);
+      setTimeout(() => toast('Try the Cart on the track!'), 9500);
+    } else setTimeout(() => toast('Click to play. Left click breaks, right click builds'), 600);
   }
 }
 
-addEventListener('keydown', () => audio.unlock(), { once: true });
-addEventListener('pointerdown', () => audio.unlock(), { once: true });
+// Unlock / re-wake audio on every gesture. iOS only accepts touchend and click as unlocking gestures,
+// and it can suspend audio again after a call or a trip to Control Centre.
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) {
+  addEventListener(ev, () => { if (!audio.ctx || audio.ctx.state !== 'running') audio.unlock(); }, { passive: true, capture: true });
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Input wiring
 
-let holdTarget = null;
 const input = new Input($('touch-layer'), {
   isPaused: () => state.paused,
   canLock: () => state.started && !state.paused,
@@ -733,11 +810,8 @@ const input = new Input($('touch-layer'), {
     if (coaster.riding) return;
     const h = targetFromScreen(x, y);
     if (h.ok) { breakAt(h); navigator.vibrate?.(8); }
-    // show what the next repeat will break
-    const n = targetFromScreen(x, y);
-    holdTarget = n.ok ? [n.x, n.y, n.z] : null;
   },
-  onHoldEnd: () => { holdTarget = null; },
+  onHoldEnd: () => {},
   onBreak: () => { if (coaster.riding) return; breakAt(targetFromScreen()); },
   onPlace: () => { if (coaster.riding) return; useAt(targetFromScreen()); },
   onWheel: (d) => selectSlot(state.slot + d),
@@ -893,18 +967,22 @@ function frame(now) {
     updateParticles(dt);
   }
 
-  // Desktop crosshair highlight
-  if (state.started && !state.paused && !coaster.riding && !input.touchMode) {
-    const h = targetFromScreen();
-    highlight.visible = h.ok;
-    if (h.ok) highlight.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
-  } else if (state.started && !coaster.riding && holdTarget) {
+  // Selector: desktop follows the crosshair; touch shows it as soon as a finger lands, so players
+  // can see where the block will go before lifting (slide away to cancel).
+  const lk = input.look;
+  if (!state.started || state.paused || coaster.riding) {
+    highlight.visible = ghost.visible = false;
+  } else if (!input.touchMode) {
+    showSelector(targetFromScreen(), true, now);
+  } else if (lk && lk.holding) {
+    showSelector(targetFromScreen(lk.x, lk.y), false, now); // breaking: outline only
+  } else if (lk && !lk.moved) {
+    showSelector(targetFromScreen(lk.x, lk.y), !state.tapBreaks, now);
+  } else if (now < flashUntil) {
     highlight.visible = true;
-    highlight.position.set(holdTarget[0] + 0.5, holdTarget[1] + 0.5, holdTarget[2] + 0.5);
-  } else if (state.started && !coaster.riding && now < flashUntil) {
-    highlight.visible = true;
+    ghost.visible = false;
     highlight.position.copy(flashPos);
-  } else highlight.visible = false;
+  } else highlight.visible = ghost.visible = false;
 
   remesh(world.dirty.size > 8 ? 6 : 3);
   portalMat.opacity = 0.62 + Math.sin(now * 0.004) * 0.12;
@@ -935,7 +1013,8 @@ boot();
 requestAnimationFrame(frame);
 
 // Debug hook for automated checks (no effect on play)
-window.__mycraft = { state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
+window.__mycraftAudio = audio;
+window.__mycraft = { input, state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
