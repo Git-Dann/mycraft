@@ -51,13 +51,14 @@ function resize() {
   camera.fov = innerWidth < innerHeight ? 80 : 72;
   camera.updateProjectionMatrix();
 }
-addEventListener('resize', resize);
+addEventListener('resize', () => { resize(); try { input.restJoystick(); } catch { /* input not ready yet */ } });
 resize();
 
 // ---------------------------------------------------------------------------------------------------------
 // State
 
 const settings = loadSettings();
+if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
 const state = {
   seed: 0,
   dim: 'overworld',
@@ -708,14 +709,26 @@ function startGame() {
   state.started = true;
   state.paused = false;
   input.reset();
-  if (!localStorage.getItem('mycraft.seenHelp')) {
-    try { localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
-    setTimeout(() => toast(input.touchMode ? 'Tap to build, hold to break. Try the Cart on the track!' : 'Click to play. Left click breaks, right click builds'), 600);
+  input.restJoystick();
+  let seen = false;
+  try { seen = !!localStorage.getItem('mycraft.seenHelp'); localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
+  if (!seen) {
+    if (input.touchMode) {
+      // Point at the two thumbs' jobs until the player has tried both
+      const j = $('joy').getBoundingClientRect();
+      $('coach-move').style.top = `${Math.max(60, j.top - 64)}px`;
+      document.body.classList.add('coaching');
+      setTimeout(() => document.body.classList.remove('coaching'), 9000);
+      setTimeout(() => toast('Try the Cart on the track!'), 9500);
+    } else setTimeout(() => toast('Click to play. Left click breaks, right click builds'), 600);
   }
 }
 
-addEventListener('keydown', () => audio.unlock(), { once: true });
-addEventListener('pointerdown', () => audio.unlock(), { once: true });
+// Unlock / re-wake audio on every gesture. iOS only accepts touchend and click as unlocking gestures,
+// and it can suspend audio again after a call or a trip to Control Centre.
+for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) {
+  addEventListener(ev, () => { if (!audio.ctx || audio.ctx.state !== 'running') audio.unlock(); }, { passive: true, capture: true });
+}
 
 // ---------------------------------------------------------------------------------------------------------
 // Input wiring
@@ -935,6 +948,7 @@ boot();
 requestAnimationFrame(frame);
 
 // Debug hook for automated checks (no effect on play)
+window.__mycraftAudio = audio;
 window.__mycraft = { state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

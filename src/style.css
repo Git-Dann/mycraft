@@ -62,6 +62,7 @@ body.locked:not(.riding) #crosshair { opacity: 1; }
 #joy { position: fixed; left: 0; top: 0; width: 120px; height: 120px; border-radius: 50%; z-index: 3; pointer-events: none; opacity: 0; transition: opacity 120ms;
   background: radial-gradient(circle, rgba(251, 246, 238, 0.18), rgba(251, 246, 238, 0.32)); border: 2px solid rgba(251, 246, 238, 0.6); }
 #joy.on { opacity: 1; }
+body.touch:not(.at-title):not(.riding):not(.loading) #joy:not(.on) { opacity: 0.5; }
 #joy-knob { position: absolute; left: 36px; top: 36px; width: 48px; height: 48px; border-radius: 50%; background: var(--paper); box-shadow: var(--e1); }
 
 #hold-ring { position: fixed; left: 0; top: 0; width: 56px; height: 56px; border-radius: 50%; z-index: 3; pointer-events: none; opacity: 0;
@@ -199,4 +200,21 @@ label.toggle-row { cursor: pointer; }
   #menu .row { grid-column: 2; }
   #menu .fine { display: none; }
   #menu .row .pill { flex: 1; }
+}
+
+/* First-play coach marks for touch controls */
+.coach { position: fixed; z-index: 6; pointer-events: none; padding: 8px 12px; border-radius: 14px; background: var(--surface); box-shadow: var(--e1);
+  font-size: 14px; font-weight: 800; color: var(--ink); opacity: 0; transition: opacity 300ms; text-align: center; line-height: 1.25; }
+body.coaching .coach { opacity: 1; animation: nudge 1.2s ease-in-out infinite alternate; }
+@keyframes nudge { to { transform: translateY(-4px); } }
+#coach-move { left: calc(var(--safe-left) + 20px); }
+#coach-look { right: 30%; top: 38%; }
+
+/* Landscape phones: fit every block on one screen */
+@media (max-height: 460px) and (orientation: landscape) {
+  #inventory .card { width: min(860px, 100%); gap: 8px; }
+  #inventory .fine { display: none; }
+  #inv-grid { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); gap: 6px; }
+  .inv-item { padding: 6px 2px; font-size: 11px; gap: 2px; }
+  .inv-item img { width: 34px; height: 34px; }
 }

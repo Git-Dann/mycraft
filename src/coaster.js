@@ -154,6 +154,14 @@ export class Coaster {
       const c = cells[i];
       if (i === startIndex) startCtrl = ctrl.length;
       const p = { x: c.x + 0.5, y: world.railHeight(c.x, c.y, c.z), z: c.z + 0.5, loop: false };
+      // Corners: steer through the middle of the curved rail rather than the cell centre
+      const cc = world.railConnections(c.x, c.y, c.z, []);
+      if (cc.length === 2 && cc[0].dx * cc[1].dx + cc[0].dz * cc[1].dz === 0 && world.get(c.x, c.y, c.z) !== B.loop) {
+        const kx = p.x + (cc[0].dx + cc[1].dx) * 0.5, kz = p.z + (cc[0].dz + cc[1].dz) * 0.5;
+        const len = Math.hypot(p.x - kx, p.z - kz);
+        p.x = kx + ((p.x - kx) / len) * 0.5;
+        p.z = kz + ((p.z - kz) / len) * 0.5;
+      }
       if (world.get(c.x, c.y, c.z) === B.loop) {
         const prev = cells[(i - 1 + n) % n], next = cells[(i + 1) % n];
         const a = i > 0 || closed ? prev : c, b = i < n - 1 || closed ? next : c;
@@ -294,7 +302,7 @@ export class Coaster {
     if (this.dir < 0) tan.negate();
     this.basis(tan, up);
     this.targetQuat = this._q.setFromRotationMatrix(this._m);
-    if (eye) eye.copy(pos).addScaledVector(up, 1.02).addScaledVector(tan, -0.3);
+    if (eye) eye.copy(pos).addScaledVector(up, 1.3).addScaledVector(tan, 0.05);
     return inLoop;
   }
 

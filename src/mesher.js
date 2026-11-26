@@ -188,6 +188,10 @@ function rail(world, x, y, z, id) {
   const list = conns.length ? conns.slice() : [{ dx: 1, dz: 0, dy: 0, x: x + 1, y, z, solo: true }, { dx: -1, dz: 0, dy: 0, x: x - 1, y, z, solo: true }];
   if (list.length === 1) list.push({ dx: -list[0].dx, dz: -list[0].dz, dy: 0, solo: true });
   const cx = x + 0.5, cz = z + 0.5;
+  if (list.length === 2 && list[0].dx * list[1].dx + list[0].dz * list[1].dz === 0) {
+    curvedRail(world, cx, cz, hc, list[0], list[1], wood, bar);
+    return;
+  }
   for (const c of list) {
     const hn = c.solo ? hc : world.railHeight(c.x, c.y, c.z);
     const he = (hc + hn) / 2;
@@ -199,6 +203,56 @@ function rail(world, x, y, z, id) {
     for (const side of [-0.3, 0.3]) {
       beam(opaque, cx + px * side, hc, cz + pz * side, cx + c.dx * 0.5 + px * side, he, cz + c.dz * 0.5 + pz * side, bar);
     }
+  }
+}
+
+// Corner pieces: the rails follow a quarter circle around the cell corner between the two connections.
+function curvedRail(world, cx, cz, hc, a, b, wood, bar) {
+  const kx = cx + (a.dx + b.dx) * 0.5, kz = cz + (a.dz + b.dz) * 0.5; // pivot corner
+  const ha = (hc + (a.solo ? hc : world.railHeight(a.x, a.y, a.z))) / 2;
+  const hb = (hc + (b.solo ? hc : world.railHeight(b.x, b.y, b.z))) / 2;
+  const a0 = Math.atan2(-b.dz, -b.dx); // direction from pivot to edge A's midpoint
+  let a1 = Math.atan2(-a.dz, -a.dx); // ... and to edge B's midpoint
+  let da = a1 - a0;
+  if (da > Math.PI) da -= Math.PI * 2;
+  if (da < -Math.PI) da += Math.PI * 2;
+  const N = 6;
+  for (const r of [0.2, 0.8]) {
+    for (let i = 0; i < N; i++) {
+      const t0 = i / N, t1 = (i + 1) / N;
+      const p0 = a0 + da * t0, p1 = a0 + da * t1;
+      beam(opaque, kx + Math.cos(p0) * r, ha + (hb - ha) * t0, kz + Math.sin(p0) * r, kx + Math.cos(p1) * r, ha + (hb - ha) * t1, kz + Math.sin(p1) * r, bar);
+      beam(opaque, kx + Math.cos(p1) * r, ha + (hb - ha) * t1, kz + Math.sin(p1) * r, kx + Math.cos(p0) * r, ha + (hb - ha) * t0, kz + Math.sin(p0) * r, bar);
+    }
+  }
+  // sleepers laid radially
+  for (const t of [1 / 6, 0.5, 5 / 6]) {
+    const p = a0 + da * t, ux = Math.cos(p), uz = Math.sin(p);
+    const y = ha + (hb - ha) * t;
+    plank(opaque, kx + ux * 0.5, kz + uz * 0.5, ux, uz, 0.46, 0.09, y - 0.1, y - 0.04, wood);
+  }
+}
+
+// An oriented flat box (top and four sides): `ux,uz` is its long axis.
+function plank(buf, mx, mz, ux, uz, hl, hw, y0, y1, c) {
+  const vx = -uz, vz = ux;
+  const P = (s, t) => [mx + ux * s * hl + vx * t * hw, mz + uz * s * hl + vz * t * hw];
+  const q = [P(-1, -1), P(1, -1), P(1, 1), P(-1, 1)];
+  const [u0, v0] = tileUV(1);
+  const quad = (a, b, cc, d, sh) => {
+    buf.ensure(4);
+    const r = Math.min(255, c[0] * sh), g = Math.min(255, c[1] * sh), bl = Math.min(255, c[2] * sh);
+    // both windings, so the piece reads correctly whichever way the curve turns
+    for (const v of [a, b, cc, d]) buf.vert(v[0], v[1], v[2], r, g, bl, u0, v0);
+    buf.quad(false);
+    buf.ensure(4);
+    for (const v of [d, cc, b, a]) buf.vert(v[0], v[1], v[2], r, g, bl, u0, v0);
+    buf.quad(false);
+  };
+  quad([q[0][0], y1, q[0][1]], [q[1][0], y1, q[1][1]], [q[2][0], y1, q[2][1]], [q[3][0], y1, q[3][1]], 1);
+  for (let i = 0; i < 4; i++) {
+    const A = q[i], Bq = q[(i + 1) % 4];
+    quad([A[0], y0, A[1]], [Bq[0], y0, Bq[1]], [Bq[0], y1, Bq[1]], [A[0], y1, A[1]], 0.75);
   }
 }
 
