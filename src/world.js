@@ -141,16 +141,17 @@ export class World {
         const ni = this.idx(nx, ny, nz);
         if (next[ni]) continue;
         const t = this.data[ni];
-        if (t === B.wire) { next[ni] = 1; queue.push(ni); } else if (t === B.piston || t === B.lamp) next[ni] = 1;
+        if (t === B.wire) { next[ni] = 1; queue.push(ni); } else if (t === B.piston || t === B.lamp || t === B.note || t === B.firework) next[ni] = 1;
       }
     }
     const changed = [];
     for (let i = 0; i < size; i++) {
       if (next[i] !== this.powered[i]) {
-        const t = this.data[i] || this.data[i];
+        const t = this.data[i];
         const x = i % W, z = Math.floor(i / W) % D;
         this.markDirty(x, z);
         if (t === B.piston) changed.push(i);
+        if (t === B.note || t === B.firework || t === B.lamp) (this.signals ||= []).push([i, t, next[i]]);
       }
     }
     this.powered = next;
@@ -181,6 +182,13 @@ export class World {
       }
     }
     return out;
+  }
+
+  /** Where this world's golden carrot is (null once it has been found). */
+  findGolden() {
+    const i = this.data.indexOf(B.goldcarrot);
+    if (i < 0) return null;
+    return [i % W, Math.floor(i / (W * D)), Math.floor(i / W) % D];
   }
 
   railHeight(x, y, z) {
@@ -234,6 +242,8 @@ function genOverworld(w) {
   // A few trees framing the meadow
   for (const [dx, dz] of [[-12, -10], [-13, 6], [9, 13], [-5, 14]]) plantTree(w, SPAWN.x + dx, 16, SPAWN.z + dz, dx === 9 ? B.pinkleaf : B.leaves, 5);
 
+  // Golden carrot: hidden on a little plinth out in the hills, sparkling so it can be spotted
+  placeGolden(w, heights, 26, 44);
   // Starter portal frame (unlit) so the Portal Key has an obvious use
   buildFrame(w, SPAWN.x - 6, 16, SPAWN.z - 8, 0, false);
   // Starter coaster so the Cart works straight away
@@ -286,8 +296,39 @@ function genBunny(w) {
       if (hash3(cx + dx, cy, cz + dz) < 0.4) w.set(cx + dx, cy + 1, cz + dz, B.cloud);
     }
   }
+  // Golden carrot on top of a cloud: bounce or fly up to find it
+  {
+    let best = null;
+    for (let i = 0; i < 22 && !best; i++) {
+      const cx = 8 + Math.floor(hash2(i, 1, s) * (W - 16)), cz = 8 + Math.floor(hash2(i, 2, s) * (D - 16));
+      const d = Math.hypot(cx - SPAWN.x, cz - SPAWN.z);
+      if (d > 18 && d < 50 && w.get(cx, 32 + Math.floor(hash2(i, 3, s) * 10), cz) === B.cloud) best = [cx, 32 + Math.floor(hash2(i, 3, s) * 10), cz];
+    }
+    if (best) {
+      let y = best[1];
+      while (w.get(best[0], y + 1, best[2]) !== AIR) y++;
+      w.set(best[0], y + 1, best[2], B.goldcarrot);
+      w.golden = [best[0], y + 1, best[2]];
+    } else placeGolden(w, heights, 20, 40);
+  }
   // Lit return portal near spawn
   buildFrame(w, SPAWN.x - 1, 16, SPAWN.z - 6, 0, true);
+}
+
+/** Puts the golden carrot on a 2-block plinth somewhere between `minD` and `maxD` blocks from spawn. */
+function placeGolden(w, heights, minD, maxD) {
+  for (let i = 0; i < 400; i++) {
+    const a = hash2(i, 11, w.seed) * Math.PI * 2;
+    const d = minD + hash2(i, 12, w.seed) * (maxD - minD);
+    const x = Math.round(SPAWN.x + Math.cos(a) * d), z = Math.round(SPAWN.z + Math.sin(a) * d);
+    if (x < 4 || z < 4 || x > W - 5 || z > D - 5) continue;
+    const h = heights[z * W + x];
+    if (w.get(x, h, z) !== AIR || w.get(x, h + 1, z) !== AIR || w.get(x, h + 2, z) !== AIR || w.get(x, h + 3, z) !== AIR) continue;
+    w.set(x, h, z, B.brick);
+    w.set(x, h + 1, z, B.goldcarrot);
+    w.golden = [x, h + 1, z];
+    return;
+  }
 }
 
 /** Carrot frame, 4 wide by 5 tall, interior 2x3. axis 0 = frame spans x. */

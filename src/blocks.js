@@ -33,6 +33,9 @@ export const BLOCKS = [
   { id: 23, key: 'portal', name: 'Portal', shape: 'portal', top: '#ff8fd0', side: '#ff8fd0', bottom: '#ff8fd0', tile: T.SMOOTH, solid: false, hidden: true },
   { id: 24, key: 'glassy', name: 'Ice', top: '#cfe8f2', side: '#c4dfeb', bottom: '#b7d3df', tile: T.SMOOTH, solid: true },
   { id: 25, key: 'pinkleaf', name: 'Blossom', top: '#f6b7cf', side: '#eeaac4', bottom: '#e09ab6', tile: T.LEAVES, solid: true },
+  { id: 26, key: 'goldcarrot', name: 'Golden Carrot', top: '#ffd34d', side: '#f5b82e', bottom: '#e09d1c', tile: T.GLOW, solid: true, hidden: true, glow: true },
+  { id: 27, key: 'note', name: 'Note Block', top: '#8a5a3c', side: '#7a4e33', bottom: '#6a432c', on: '#b07a52', tile: T.GLOW, solid: true },
+  { id: 28, key: 'firework', name: 'Fireworks', top: '#e05a7a', side: '#c94a69', bottom: '#a93b55', tile: T.BRICK, solid: true },
 ];
 
 export const BY_KEY = {};
@@ -77,6 +80,8 @@ export const ITEMS = [
   { key: 'wire', block: 'wire' },
   { key: 'piston', block: 'piston' },
   { key: 'lamp', block: 'lamp' },
+  { key: 'note', block: 'note' },
+  { key: 'firework', block: 'firework' },
 ];
 export const ITEM_BY_KEY = Object.fromEntries(ITEMS.map((i) => [i.key, i]));
 export const itemName = (item) => item.name || BLOCKS[BY_KEY[item.block]].name;

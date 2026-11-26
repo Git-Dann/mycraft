@@ -40,9 +40,14 @@ export class Sky {
   }
 
   setPalette(p, scene) {
-    const top = new THREE.Color(p.top), hor = new THREE.Color(p.horizon);
+    this.setColors(new THREE.Color(p.top), new THREE.Color(p.horizon), new THREE.Color(p.fog), scene);
+    this.cloudMat.color.setHex(p.cloud);
+  }
+
+  /** Repaints the dome gradient and fog. Called a few times a second by the day/night cycle. */
+  setColors(top, hor, fog, scene) {
     const pos = this.geo.attributes.position, col = this.geo.attributes.color;
-    const c = new THREE.Color();
+    const c = this._c || (this._c = new THREE.Color());
     for (let i = 0; i < pos.count; i++) {
       const y = pos.getY(i) / 150;
       const t = Math.max(0, Math.min(1, (y + 0.05) / 0.6));
@@ -50,9 +55,10 @@ export class Sky {
       col.setXYZ(i, c.r, c.g, c.b);
     }
     col.needsUpdate = true;
-    scene.fog.color.setHex(p.fog);
-    scene.background = new THREE.Color(p.fog);
-    this.cloudMat.color.setHex(p.cloud);
+    scene.fog.color.copy(fog);
+    if (!scene.background || !scene.background.isColor) scene.background = new THREE.Color();
+    scene.background.copy(fog);
+    document.body.style.background = `#${fog.getHexString()}`;
   }
 
   update(dt, camPos) {
@@ -129,12 +135,45 @@ export class Bunnies {
       const a = Math.random() * Math.PI * 2, r = 4 + Math.random() * radius;
       const x = Math.max(2, Math.min(W - 3, cx + Math.cos(a) * r)), z = Math.max(2, Math.min(D - 3, cz + Math.sin(a) * r));
       const y = this.ground(x, z, H - 1);
-      this.list.push({ x, y, z, fromX: x, fromY: y, fromZ: z, toX: x, toY: y, toZ: z, t: 1, dur: 0.38, wait: Math.random() * 2, yaw: Math.random() * 6.28 });
-      col.setHex(BUNNY_TINTS[i % BUNNY_TINTS.length]);
+      const tint = BUNNY_TINTS[i % BUNNY_TINTS.length];
+      this.list.push({ x, y, z, fromX: x, fromY: y, fromZ: z, toX: x, toY: y, toZ: z, t: 1, dur: 0.38, wait: Math.random() * 2, yaw: Math.random() * 6.28, tint, pet: false, fed: false, arc: 0.55 });
+      col.setHex(tint);
       this.mesh.setColorAt(i, col);
     }
     this.mesh.count = this.list.length;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** Adds the player's pet bunny right beside them (it follows through portals). */
+  addPet(tint, x, z) {
+    if (this.list.some((b) => b.pet) || this.list.length >= this.max) return;
+    const y = this.ground(x, z, H - 1);
+    const i = this.list.length;
+    this.list.push({ x, y, z, fromX: x, fromY: y, fromZ: z, toX: x, toY: y, toZ: z, t: 1, dur: 0.38, wait: 0.3, yaw: 0, tint, pet: true, fed: true, arc: 0.55 });
+    this.mesh.setColorAt(i, new THREE.Color(tint));
+    this.mesh.count = this.list.length;
+    this.mesh.instanceColor.needsUpdate = true;
+  }
+
+  pet() { return this.list.find((b) => b.pet) || null; }
+
+  /** A happy little hop in place. */
+  hop(b, high = 1.05) {
+    b.fromX = b.toX = b.x; b.fromZ = b.toZ = b.z; b.fromY = b.toY = this.ground(b.x, b.z, b.y + 0.5);
+    b.t = 0; b.dur = 0.5; b.arc = high; b.wait = 0.4;
+  }
+
+  /** Nearest bunny hit by a ray (origin o, unit direction d) within maxDist, or null. */
+  pick(o, d, maxDist) {
+    let best = null, bestT = maxDist;
+    for (const b of this.list) {
+      const cx = b.x - o.x, cy = b.y + 0.4 - o.y, cz = b.z - o.z;
+      const t = cx * d.x + cy * d.y + cz * d.z;
+      if (t < 0 || t > bestT) continue;
+      const px = cx - d.x * t, py = cy - d.y * t, pz = cz - d.z * t;
+      if (px * px + py * py + pz * pz < 0.36) { best = b; bestT = t; }
+    }
+    return best ? { bunny: best, dist: bestT } : null;
   }
 
   /** Top of the highest solid block at or below `fromY` in this column. */
@@ -154,15 +193,27 @@ export class Bunnies {
         const t = b.t;
         b.x = b.fromX + (b.toX - b.fromX) * t;
         b.z = b.fromZ + (b.toZ - b.fromZ) * t;
-        b.y = b.fromY + (b.toY - b.fromY) * t + Math.sin(t * Math.PI) * 0.55;
+        b.y = b.fromY + (b.toY - b.fromY) * t + Math.sin(t * Math.PI) * b.arc;
+        if (b.t >= 1) { b.arc = 0.55; b.dur = b.pet ? 0.3 : 0.38; }
       } else {
         b.wait -= dt;
         if (b.wait <= 0) {
           const dx = player.pos.x - b.x, dz = player.pos.z - b.z;
           const dist = Math.hypot(dx, dz);
-          if (lure && dist < 14 && dist > 1.6) b.yaw = Math.atan2(-dx, -dz) + (Math.random() - 0.5) * 0.4;
+          if (b.pet) {
+            // Pet: stays close, catching up quickly; pops back beside you if it gets left far behind
+            if (dist > 22 || Math.abs(player.pos.y - b.y) > 8) {
+              b.x = b.fromX = b.toX = player.pos.x - Math.sin(player.yaw) * -1.5;
+              b.z = b.fromZ = b.toZ = player.pos.z - Math.cos(player.yaw) * -1.5;
+              b.y = b.fromY = b.toY = this.ground(b.x, b.z, player.pos.y + 1);
+              b.wait = 0.2;
+              continue;
+            }
+            if (dist < 2.2) { b.wait = 0.3 + Math.random() * 0.8; b.yaw = Math.atan2(-dx, -dz); continue; }
+            b.yaw = Math.atan2(-dx, -dz);
+          } else if (lure && dist < 14 && dist > 1.6) b.yaw = Math.atan2(-dx, -dz) + (Math.random() - 0.5) * 0.4;
           else b.yaw += (Math.random() - 0.5) * 1.8;
-          const step = 0.9 + Math.random() * 0.5;
+          const step = b.pet ? Math.max(0.8, Math.min(1.5, dist - 1.6)) : 0.9 + Math.random() * 0.5;
           const tx = b.x - Math.sin(b.yaw) * step, tz = b.z - Math.cos(b.yaw) * step;
           const gy = this.ground(tx, tz, b.y + 1.2);
           const blocked = tx < 1 || tz < 1 || tx > W - 2 || tz > D - 2 || gy > b.y + 1.05 || gy < b.y - 3 || SOLID[this.world.get(Math.floor(tx), Math.floor(b.y + 0.5), Math.floor(tz))] && gy > b.y + 1.05;
@@ -171,7 +222,7 @@ export class Bunnies {
             b.fromX = b.x; b.fromY = b.y; b.fromZ = b.z;
             b.toX = tx; b.toZ = tz; b.toY = gy;
             b.t = 0;
-            b.wait = lure && dist < 14 ? 0.15 + Math.random() * 0.3 : 0.4 + Math.random() * 2.2;
+            b.wait = b.pet ? 0.05 + Math.random() * 0.1 : lure && dist < 14 ? 0.15 + Math.random() * 0.3 : 0.4 + Math.random() * 2.2;
             if (dist < 6 && Math.random() < 0.15) this.audio.boing();
           }
         }

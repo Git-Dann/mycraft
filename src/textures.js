@@ -159,6 +159,17 @@ export function itemIcon(item) {
       g.fillStyle = '#b9a27e';
       g.beginPath(); g.moveTo(cx, cy - h * 2 + 2); g.lineTo(cx + w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx - w, cy - h + 2); g.closePath(); g.fill();
     }
+    if (item.key === 'note') {
+      g.fillStyle = '#fffaf3';
+      g.beginPath(); g.ellipse(29, 32, 5, 4, -0.4, 0, 7); g.fill();
+      g.fillRect(32, 14, 3, 18);
+      g.beginPath(); g.moveTo(35, 14); g.quadraticCurveTo(42, 17, 40, 24); g.lineTo(37, 22); g.quadraticCurveTo(38, 18, 35, 18); g.fill();
+    }
+    if (item.key === 'firework') {
+      g.fillStyle = '#ffe7a3';
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; g.beginPath(); g.arc(32 + Math.cos(a) * 9, 16 + Math.sin(a) * 6, 2.4, 0, 7); g.fill(); }
+      g.beginPath(); g.arc(32, 16, 3, 0, 7); g.fill();
+    }
     if (item.key === 'generator') {
       g.fillStyle = '#ffe7a3';
       g.beginPath(); g.moveTo(34, 10); g.lineTo(26, 24); g.lineTo(33, 24); g.lineTo(29, 36); g.lineTo(39, 20); g.lineTo(32, 20); g.closePath(); g.fill();

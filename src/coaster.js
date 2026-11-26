@@ -231,6 +231,8 @@ export class Coaster {
     this.v = 4;
     this.dir = 1;
     this.riding = true;
+    this.laps = 0;
+    this.wasInLoop = false;
     this.lookYaw = 0;
     this.lookPitch = 0;
     for (const c of this.cars) c.visible = true;
@@ -279,6 +281,12 @@ export class Coaster {
     if (inLoop && this.v < 8) this.v += 14 * dt; // magnetic booster keeps loops friendly
     this.v = Math.min(this.v, 21);
     this.s += this.v * this.dir * dt;
+    if (p.closed && (this.s >= p.length || this.s < 0)) {
+      // Closed circuit: wrap round (previously the camera got stuck at the end after one lap)
+      this.s = this.wrap(this.s);
+      this.laps = (this.laps || 0) + 1;
+      this.onLap?.(this.laps);
+    }
     if (!p.closed && (this.s <= 0 || this.s >= p.length)) {
       this.s = Math.max(0, Math.min(p.length, this.s));
       this.dir *= -1; // shuttle back at the end of an open track
@@ -299,6 +307,8 @@ export class Coaster {
     }
     // Rider camera (front car)
     inLoop = this.sample(this.s, pos, tan, up);
+    if (this.wasInLoop && !inLoop) this.onLoop?.();
+    this.wasInLoop = !!inLoop;
     if (this.dir < 0) tan.negate();
     this.basis(tan, up);
     this.targetQuat = this._q.setFromRotationMatrix(this._m);

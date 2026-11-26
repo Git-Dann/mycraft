@@ -31,6 +31,7 @@ export function saveGame(state) {
       dim: state.dim,
       player: state.player,
       hotbar: state.hotbar,
+      fun: state.fun, // stats, stickers, pet, time of day
       worlds: Object.fromEntries(Object.entries(state.worlds).map(([k, w]) => [k, packEdits(w.edits)])),
       savedAt: Date.now(),
     };
@@ -59,7 +60,7 @@ export function clearGame() {
 }
 
 export function loadSettings() {
-  try { return { music: true, sfx: true, sensitivity: 1, ...JSON.parse(localStorage.getItem(SETTINGS) || '{}') }; } catch { return { music: true, sfx: true, sensitivity: 1 }; }
+  try { return { music: true, sfx: true, sensitivity: 1, daynight: true, ...JSON.parse(localStorage.getItem(SETTINGS) || '{}') }; } catch { return { music: true, sfx: true, sensitivity: 1, daynight: true }; }
 }
 
 export function saveSettings(s) {
