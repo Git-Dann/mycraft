@@ -39,7 +39,7 @@
           <div class="chip" id="dim-chip">Overworld</div>
         </div>
         <div class="top-group" id="build-tools">
-          <button class="round" id="btn-undo" aria-label="Undo last change">
+          <button class="round" id="btn-undo" aria-label="Undo last change" title="Undo (Z)">
             <svg viewBox="0 0 24 24" width="22" height="22"><path d="M9 5L4 10l5 5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 10h10a6 6 0 0 1 0 12h-3" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/></svg>
           </button>
           <div class="seg" role="group" aria-label="What a tap does">
@@ -49,6 +49,26 @@
         </div>
         <button class="pill danger" id="btn-exit">Hop off</button>
       </div>
+      <div id="keys" class="desk" aria-label="Keyboard and mouse controls">
+        <div class="krow"><span class="kgroup"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><em>Move</em></div>
+        <div class="krow"><span class="kgroup"><kbd class="mouse-kbd">Mouse</kbd></span><em>Look around</em></div>
+        <div class="krow walk"><span class="kgroup"><kbd class="wide">Space</kbd></span><em>Jump</em></div>
+        <div class="krow walk"><span class="kgroup"><kbd>F</kbd></span><em>Fly</em></div>
+        <div class="krow fly"><span class="kgroup"><kbd class="wide">Space</kbd></span><em>Fly up</em></div>
+        <div class="krow fly"><span class="kgroup"><kbd class="wide">Shift</kbd></span><em>Fly down</em></div>
+        <div class="krow fly"><span class="kgroup"><kbd>F</kbd></span><em>Land</em></div>
+        <div class="krow ride"><span class="kgroup"><kbd class="wide">Space</kbd></span><em>Hop off</em></div>
+        <div class="ksep"></div>
+        <div class="krow build"><span class="kgroup"><kbd class="mouse-kbd"><svg class="mouse" viewBox="0 0 16 22" width="14" height="19" aria-hidden="true"><rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1v8M1.5 9h13" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.8A6.2 6.2 0 0 1 14.2 8v1H8z" fill="currentColor"/></svg> Right</kbd></span><em>Build</em></div>
+        <div class="krow build"><span class="kgroup"><kbd class="mouse-kbd"><svg class="mouse" viewBox="0 0 16 22" width="14" height="19" aria-hidden="true"><rect x="1" y="1" width="14" height="20" rx="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 1v8M1.5 9h13" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.8A6.2 6.2 0 0 0 1.8 8v1H8z" fill="currentColor"/></svg> Left</kbd></span><em>Break</em></div>
+        <div class="krow build"><span class="kgroup"><kbd>1</kbd><i>to</i><kbd>9</kbd></span><em>Pick a block</em></div>
+        <div class="krow build"><span class="kgroup"><kbd>E</kbd></span><em>All blocks</em></div>
+        <div class="krow build"><span class="kgroup"><kbd>Z</kbd></span><em>Undo</em></div>
+        <div class="krow"><span class="kgroup"><kbd>Esc</kbd></span><em>Free the mouse</em></div>
+        <button class="khide" id="btn-keys-hide" aria-label="Hide controls"><kbd>H</kbd> Hide</button>
+      </div>
+      <button class="desk" id="keys-show" aria-label="Show controls"><kbd>H</kbd> Controls</button>
+      <div id="mouse-free" class="desk" aria-live="polite"><b>Mouse is free</b><span>Click the world to carry on · <kbd>Esc</kbd> for the menu</span></div>
       <div id="toast" role="status" aria-live="polite"></div>
       <div id="item-label"></div>
       <div class="pad">
@@ -144,9 +164,10 @@
             <h3>On a computer</h3>
             <ul>
               <li><b>Move:</b> WASD, Space to jump, Shift to go down</li>
-              <li><b>Build / break:</b> right click / left click</li>
+              <li><b>Build / break:</b> right click / left click. <b>Z</b> undoes</li>
               <li><b>Blocks:</b> 1 to 9, mouse wheel, E for all</li>
-              <li><b>Fly:</b> F or double-tap Space</li>
+              <li><b>Fly:</b> F or double-tap Space, then Space to go up and Shift to go down</li>
+              <li><b>Mouse:</b> Esc frees it so you can click the hotbar and buttons. Click the world to carry on. H shows or hides the controls</li>
             </ul>
           </div>
         </div>
@@ -154,8 +175,8 @@
         <ul>
           <li><b>Ride the coaster:</b> pick the Cart and tap the track. Add Track blocks to make it longer. Stack them one block higher to make hills, and lay them in an L to turn a corner. A Loop piece makes a loop the loop.</li>
           <li><b>Bunny Meadow:</b> use the Portal Key inside the carrot frame. Make your own frame from Carrot blocks, 4 wide and 5 tall.</li>
-          <li><b>Bunnies</b> follow you when you hold a Carrot. Tap one to say hello, and feed one a carrot to make a friend.</li>
-          <li><b>Clouds</b> are bouncy. <b>Note blocks</b> play music when you walk on them, and <b>Fireworks</b> go off when you power them or jump on them.</li>
+          <li><b>Feed a bunny:</b> pick the <b>Carrot</b> block, then tap a bunny (right click on a computer). Your first fed bunny becomes your pet and follows you everywhere.</li>
+          <li><b>Block powers:</b> Cloud is bouncy, Ice is slippery, Mint makes you zoom, Sand falls, Sunshine and Star Block glow at night. Tap a Note Block to play it, tap Fireworks to launch them, tap a Generator to switch it on or off. Each block's power shows when you pick it.</li>
           <li><b>Treasure:</b> a golden carrot is hidden in each world. Look for the sparkle!</li>
           <li><b>Stickers:</b> collect them all in the Sticker book in the menu.</li>
           <li><b>No music on iPhone?</b> Tap the screen once, and check the volume buttons.</li>

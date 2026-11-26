@@ -120,12 +120,25 @@ export class Effects {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.FW * 3), 3));
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.FW * 3), 3));
+    geo.setAttribute('alpha', new THREE.BufferAttribute(new Float32Array(this.FW), 1));
     this.fwGeo = geo;
     this.fwVel = new Float32Array(this.FW * 3);
     this.fwLife = new Float32Array(this.FW);
     this.fwBase = new Float32Array(this.FW * 3);
     this.fwNext = 0;
-    this.fw = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.32, map: T.dot, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    // Soft round sparks with their own fade, readable against a bright daytime sky as well as at night
+    this.fwMat = new THREE.ShaderMaterial({
+      uniforms: { scale: { value: 400 } },
+      vertexShader: `attribute float alpha; attribute vec3 color; varying vec3 vC; varying float vA; uniform float scale;
+        void main() { vC = color; vA = alpha; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = min(0.3 * scale / max(1.0, -mv.z), 0.045 * scale); gl_Position = projectionMatrix * mv; }`,
+      fragmentShader: `varying vec3 vC; varying float vA;
+        void main() { float d = length(gl_PointCoord - 0.5); if (d > 0.5) discard;
+          float core = smoothstep(0.5, 0.0, d); gl_FragColor = vec4(mix(vC, vec3(1.0), core * 0.55), vA * smoothstep(0.5, 0.25, d)); }`,
+      transparent: true,
+      depthWrite: false,
+    });
+    this.fw = new THREE.Points(geo, this.fwMat);
     this.fw.frustumCulled = false;
     scene.add(this.fw);
     this.rockets = [];
@@ -137,6 +150,7 @@ export class Effects {
     const T = textures();
     const p = this.sprites.find((q) => q.life <= 0) || this.sprites[0];
     p.s.material.map = T[kind];
+    p.s.material.color.setHex(opts.tint ?? 0xffffff);
     p.s.material.blending = kind === 'sparkle' ? THREE.AdditiveBlending : THREE.NormalBlending;
     p.s.material.needsUpdate = true;
     p.s.position.set(x, y, z);
@@ -164,29 +178,30 @@ export class Effects {
   }
 
   firework(x, y, z) {
-    this.rockets.push({ x, y, z, vy: 13, t: 0, fuse: rand(0.75, 0.95), trail: 0 });
+    this.rockets.push({ x, y, z, vy: 12, t: 0, fuse: rand(0.6, 0.72), trail: 0 });
     this.fwActive = true;
   }
 
   burst(x, y, z) {
-    const palette = [[1, 0.55, 0.7], [1, 0.85, 0.45], [0.55, 0.8, 1], [0.65, 1, 0.8], [1, 0.65, 0.45], [0.85, 0.7, 1]];
+    const palette = [[0.95, 0.25, 0.5], [1, 0.72, 0.15], [0.25, 0.55, 1], [0.2, 0.8, 0.5], [1, 0.45, 0.2], [0.65, 0.35, 0.95]];
     const c1 = palette[Math.floor(Math.random() * palette.length)];
     const c2 = palette[Math.floor(Math.random() * palette.length)];
     const pos = this.fwGeo.attributes.position.array;
-    const n = 110;
+    const n = 150;
+    this.pop('sparkle', x, y, z, { size: 3.2, life: 0.45, vy: 0, vx: 0, vz: 0 });
     for (let k = 0; k < n; k++) {
       const i = this.fwNext;
       this.fwNext = (this.fwNext + 1) % this.FW;
       // even-ish sphere directions
       const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u);
-      const sp = rand(5, 7.5);
+      const sp = rand(4.2, 6.2);
       this.fwVel[i * 3] = Math.cos(a) * r * sp;
       this.fwVel[i * 3 + 1] = u * sp + 1;
       this.fwVel[i * 3 + 2] = Math.sin(a) * r * sp;
       pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
       const c = k % 2 ? c1 : c2;
       this.fwBase[i * 3] = c[0]; this.fwBase[i * 3 + 1] = c[1]; this.fwBase[i * 3 + 2] = c[2];
-      this.fwLife[i] = rand(1.3, 1.9);
+      this.fwLife[i] = rand(1.5, 2.2);
     }
   }
 
@@ -258,20 +273,21 @@ export class Effects {
           this.rockets.splice(r, 1);
         }
       }
-      const pos = this.fwGeo.attributes.position.array, col = this.fwGeo.attributes.color.array;
+      const pos = this.fwGeo.attributes.position.array, col = this.fwGeo.attributes.color.array, alp = this.fwGeo.attributes.alpha.array;
       let alive = this.rockets.length > 0;
       for (let i = 0; i < this.FW; i++) {
-        if (this.fwLife[i] <= 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = 0; continue; }
+        if (this.fwLife[i] <= 0) { alp[i] = 0; continue; }
         alive = true;
         this.fwLife[i] -= dt;
-        this.fwVel[i * 3 + 1] -= 6 * dt;
+        alp[i] = Math.min(1, this.fwLife[i] / 0.7) * (0.8 + Math.random() * 0.2);
+        this.fwVel[i * 3 + 1] -= 3.5 * dt;
         this.fwVel[i * 3] *= 1 - dt * 1.6; this.fwVel[i * 3 + 1] *= 1 - dt * 1.6; this.fwVel[i * 3 + 2] *= 1 - dt * 1.6;
         pos[i * 3] += this.fwVel[i * 3] * dt; pos[i * 3 + 1] += this.fwVel[i * 3 + 1] * dt; pos[i * 3 + 2] += this.fwVel[i * 3 + 2] * dt;
-        const f = Math.min(1, this.fwLife[i] / 0.6) * (0.75 + Math.random() * 0.25);
-        col[i * 3] = this.fwBase[i * 3] * f; col[i * 3 + 1] = this.fwBase[i * 3 + 1] * f; col[i * 3 + 2] = this.fwBase[i * 3 + 2] * f;
+        col[i * 3] = this.fwBase[i * 3]; col[i * 3 + 1] = this.fwBase[i * 3 + 1]; col[i * 3 + 2] = this.fwBase[i * 3 + 2];
       }
       this.fwGeo.attributes.position.needsUpdate = true;
       this.fwGeo.attributes.color.needsUpdate = true;
+      this.fwGeo.attributes.alpha.needsUpdate = true;
       this.fwActive = alive;
     }
   }
@@ -281,6 +297,14 @@ export class Effects {
     for (const b of this.butterflies) { b.life = 0; b.g.visible = false; }
     this.rockets.length = 0;
     this.fwLife.fill(0);
+  }
+
+  /** Keeps spark size right for the screen height (call on resize). */
+  setScreen(h) { this.fwMat.uniforms.scale.value = h * 0.5 * (window.devicePixelRatio || 1); }
+
+  /** A gentle shower of petals (Blossom). */
+  petals(x, y, z) {
+    for (let i = 0; i < 8; i++) this.pop('heart', x + rand(0, 1), y + rand(0.2, 1), z + rand(0, 1), { size: rand(0.14, 0.22), life: rand(1.4, 2), vy: rand(-0.6, -0.2), vx: rand(-0.4, 0.4), vz: rand(-0.4, 0.4), tint: 0xffc4da });
   }
 }
 

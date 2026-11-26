@@ -1,10 +1,12 @@
 import * as THREE from 'three';
-import { BLOCKS, T } from './blocks.js';
+import { BLOCKS } from './blocks.js';
 
-// A tiny procedural greyscale atlas (4x2 tiles of 16px). Vertex colours carry the hue; the atlas adds grain.
+// Voxel-art atlas: every block face is a hand-designed 16x16 pixel tile, painted in code (no image files).
+// Tiles sit in 20px cells with a 2px repeated-edge gutter so mipmaps don't bleed between neighbours.
 export const TILE = 16;
-export const ATLAS_COLS = 4;
-export const ATLAS_ROWS = 2;
+const PAD = 8; // wide gutters so distant (mipmapped) tiles never pick up their neighbours
+const CELL = TILE + PAD * 2;
+const COLS = 8;
 
 function rng(seed) {
   let a = seed >>> 0;
@@ -16,51 +18,308 @@ function rng(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+const seedOf = (name) => [...name].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261);
 
-function paintTile(img, tx, ty, fn) {
-  const W = ATLAS_COLS * TILE;
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      const v = Math.max(0, Math.min(255, Math.round(fn(x, y) * 255)));
-      const i = ((ty * TILE + y) * W + tx * TILE + x) * 4;
-      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-      img.data[i + 3] = 255;
-    }
-  }
+// ---- painters ----
+export const TILES = {}; // name -> index
+const PAINTERS = [];
+function tile(name, fn) { TILES[name] = PAINTERS.length; PAINTERS.push([name, fn]); }
+
+/** A 16x16 pixel grid with tiny drawing helpers. */
+function grid(seed) {
+  const px = new Array(TILE * TILE).fill('#ff00ff');
+  const r = rng(seed);
+  const g = {
+    r,
+    set: (x, y, c) => { if (x >= 0 && y >= 0 && x < TILE && y < TILE) px[y * TILE + x] = c; },
+    get: (x, y) => px[Math.max(0, Math.min(TILE - 1, y)) * TILE + Math.max(0, Math.min(TILE - 1, x))],
+    pick: (list) => list[Math.floor(r() * list.length)],
+    noise: (list, x0 = 0, y0 = 0, x1 = TILE, y1 = TILE) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) g.set(x, y, g.pick(list)); },
+    dots: (list, chance) => { for (let i = 0; i < TILE * TILE; i++) if (r() < chance) px[i] = g.pick(list); },
+    rect: (x0, y0, w, h, c) => { for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) g.set(x, y, c); },
+    frame: (c, inset = 0) => { for (let i = inset; i < TILE - inset; i++) { g.set(i, inset, c); g.set(i, TILE - 1 - inset, c); g.set(inset, i, c); g.set(TILE - 1 - inset, i, c); } },
+    px,
+  };
+  return g;
 }
 
+const GRASS = ['#6fae5a', '#67a653', '#78b862', '#62a24f', '#6fae5a'];
+const DIRT = ['#8a6142', '#7f5739', '#94694a', '#86603f'];
+const STONE = ['#9a9c96', '#8f918b', '#a3a59f', '#888a84'];
+
+tile('white', (g) => g.noise(['#ffffff']));
+
+tile('grass_top', (g) => {
+  g.noise(GRASS);
+  g.dots(['#86c66d', '#8ccd73'], 0.07);
+  g.dots(['#558f44'], 0.05);
+});
+tile('grass_side', (g) => {
+  g.noise(DIRT);
+  g.dots(['#a37d5c', '#6a4931'], 0.05);
+  for (let x = 0; x < TILE; x++) {
+    const d = 3 + (g.r() < 0.45 ? 1 : 0) + (g.r() < 0.2 ? 1 : 0);
+    for (let y = 0; y < d; y++) g.set(x, y, g.pick(GRASS));
+    g.set(x, d, '#558f44');
+  }
+});
+tile('dirt', (g) => {
+  g.noise(DIRT);
+  g.dots(['#a88566', '#b08d6c'], 0.05);
+  g.dots(['#5e3f28', '#664630'], 0.05);
+});
+tile('stone', (g) => {
+  // cobbles: nearest-centre cells with darker mortar lines
+  const c = Array.from({ length: 7 }, () => [g.r() * 16, g.r() * 16, g.pick(STONE)]);
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const ds = c.map(([cx, cy]) => {
+      const dx = Math.min(Math.abs(x - cx), 16 - Math.abs(x - cx)), dy = Math.min(Math.abs(y - cy), 16 - Math.abs(y - cy));
+      return Math.hypot(dx, dy);
+    });
+    const order = ds.map((d, i) => [d, i]).sort((a, b) => a[0] - b[0]);
+    if (order[1][0] - order[0][0] < 1.1) g.set(x, y, '#6d6f6a');
+    else g.set(x, y, g.r() < 0.18 ? '#b0b2ac' : c[order[0][1]][2]);
+  }
+});
+tile('log_side', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const band = (x + (y > 8 ? 1 : 0)) % 4;
+    g.set(x, y, band === 0 ? '#5a3f29' : band === 2 ? '#7a5a3d' : '#6c4e34');
+  }
+  g.dots(['#866645'], 0.05);
+  for (let i = 0; i < 3; i++) { const x = Math.floor(g.r() * 16), y0 = Math.floor(g.r() * 12); g.rect(x, y0, 1, 3, '#4b3422'); }
+});
+tile('log_top', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+    if (d > 6.6) g.set(x, y, (x + y) % 3 ? '#5f432c' : '#6e4f35');
+    else g.set(x, y, d < 1.2 ? '#9a6d43' : Math.floor(d) % 2 ? '#c8a074' : '#b4895c');
+  }
+});
+tile('planks', (g) => {
+  const boards = ['#c99a66', '#bf8f5c', '#d2a571', '#c4945f'];
+  for (let b = 0; b < 4; b++) {
+    const col = boards[b];
+    const joint = (b % 2) * 8 + 3;
+    for (let y = b * 4; y < b * 4 + 4; y++) for (let x = 0; x < TILE; x++) {
+      if (y % 4 === 3) g.set(x, y, '#8f6a44');
+      else if (x === joint) g.set(x, y, '#9f7a52');
+      else g.set(x, y, g.r() < 0.12 ? '#b3854f' : col);
+    }
+    g.set((joint + 2) % 16, b * 4 + 1, '#7a5a3d');
+  }
+});
+tile('leaves', (g) => {
+  g.noise(['#4f8a45', '#5a9a4f', '#4a8340', '#62a457']);
+  g.dots(['#2f5a2c', '#365f31'], 0.12);
+  g.dots(['#7cc06a', '#86c873'], 0.08);
+});
+tile('sand', (g) => {
+  g.noise(['#e8d5a6', '#e2cd9a', '#eddcb2', '#e5d1a0']);
+  for (const yy of [3, 9, 14]) for (let x = 0; x < TILE; x++) if ((x + yy) % 5 < 3) g.set(x, yy + (x % 6 < 3 ? 0 : 1), '#d1b982');
+  g.dots(['#f6ead0'], 0.04);
+});
+tile('brick', (g) => {
+  const cols = ['#c77d62', '#b96f55', '#cf8a6e', '#bd7459'];
+  for (let row = 0; row < 4; row++) {
+    const off = row % 2 ? 4 : 0;
+    for (let bx = -1; bx < 3; bx++) {
+      const c = cols[Math.floor(g.r() * cols.length)];
+      for (let y = row * 4; y < row * 4 + 4; y++) for (let x = bx * 8 + off; x < bx * 8 + off + 8; x++) {
+        const mortar = y % 4 === 3 || (x - off + 16) % 8 === 7;
+        g.set(x, y, mortar ? '#eadfcc' : y % 4 === 0 ? '#d99a80' : g.r() < 0.1 ? '#a9634b' : c);
+      }
+    }
+  }
+});
+tile('snow', (g) => {
+  g.noise(['#f7f6f2', '#f0f0ee', '#fbfbf9', '#eef2f5']);
+  g.dots(['#dbe5ee'], 0.07);
+  g.dots(['#ffffff'], 0.05);
+});
+tile('ice', (g) => {
+  g.noise(['#cfe8f2', '#c6e2ee', '#d6edf6']);
+  for (let i = -16; i < 16; i += 7) for (let k = 0; k < 6; k++) { g.set(i + k + 4, 11 - k, '#f4fbfe'); g.set(i + k + 5, 11 - k, '#eaf6fb'); }
+  g.dots(['#a9d2e3'], 0.04);
+  g.frame('#b3d7e6');
+});
+tile('carrot_side', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const ridge = (y + (x > 7 ? 2 : 0)) % 5 === 2 && (x + y) % 7 > 1;
+    g.set(x, y, ridge ? '#cf6a22' : g.pick(['#ef8233', '#f08a3c', '#e9792c']));
+  }
+  g.dots(['#f9a865'], 0.06);
+});
+tile('carrot_top', (g) => {
+  g.noise(['#ef8233', '#e9792c']);
+  g.frame('#d26a22');
+  const leaf = [[7, 7], [8, 7], [7, 8], [8, 8], [6, 6], [9, 6], [6, 9], [9, 9], [5, 5], [10, 5], [7, 5], [8, 4], [5, 8], [10, 8], [7, 10], [8, 11]];
+  for (const [x, y] of leaf) g.set(x, y, g.r() < 0.5 ? '#5f9e4d' : '#7cc06a');
+});
+tile('candy_top', (g) => {
+  g.noise(['#f4a9c8', '#f0a0c0', '#f7b6d1', '#eb98b9']);
+  for (let i = 0; i < 5; i++) {
+    const x = 2 + Math.floor(g.r() * 12), y = 2 + Math.floor(g.r() * 12);
+    g.set(x, y, '#f5c84c');
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.set(x + dx, y + dy, '#fffaf3');
+  }
+});
+tile('candy_side', (g) => {
+  g.noise(['#c9a27e', '#bb9470', '#d1ab88']);
+  g.dots(['#a98462'], 0.06);
+  for (let x = 0; x < TILE; x++) {
+    const d = 3 + (g.r() < 0.45 ? 1 : 0) + (g.r() < 0.2 ? 1 : 0);
+    for (let y = 0; y < d; y++) g.set(x, y, g.pick(['#f4a9c8', '#f0a0c0', '#f7b6d1']));
+    g.set(x, d, '#d987a8');
+  }
+});
+tile('blossom', (g) => {
+  g.noise(['#f6b7cf', '#eeaac4', '#f9c4d8', '#e69ab7']);
+  g.dots(['#c97a9a'], 0.1);
+  for (let i = 0; i < 6; i++) {
+    const x = Math.floor(g.r() * 16), y = Math.floor(g.r() * 16);
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) g.set(x + dx, y + dy, '#fff0f6');
+    g.set(x, y, '#ffd3e4');
+  }
+});
+tile('cloud', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const puff = Math.sin(x * 0.7) * 1.5 + Math.cos(y * 0.6 + x * 0.2) * 1.2;
+    g.set(x, y, y > 11 + puff * 0.5 ? '#e3e7f0' : puff > 1.4 ? '#ffffff' : g.r() < 0.5 ? '#f7f8fb' : '#eef0f6');
+  }
+});
+tile('sunshine', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) {
+    const dx = x - 7.5, dy = y - 7.5, d = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    const ray = Math.cos(a * 8) > 0.6;
+    g.set(x, y, d < 3.2 ? '#fff6c4' : d < 4.6 ? '#ffe37a' : ray ? '#ffd65c' : '#f2be45');
+  }
+  g.frame('#e0a93a');
+});
+tile('mint', (g) => {
+  for (let y = 0; y < TILE; y++) for (let x = 0; x < TILE; x++) g.set(x, y, (x + y) % 8 < 3 ? '#effaf5' : g.pick(['#9fd8c0', '#97d3ba', '#a6dcc6']));
+  g.frame('#7fc0a5');
+});
+tile('star', (g) => {
+  g.noise(['#2f3f73', '#34467d', '#2b3a6c']);
+  g.dots(['#fff6c8', '#cfd8ff'], 0.04);
+  const s = [[7, 4], [7, 5], [7, 6], [7, 7], [7, 8], [7, 9], [7, 10], [4, 7], [5, 7], [6, 7], [8, 7], [9, 7], [10, 7], [6, 6], [8, 6], [6, 8], [8, 8]];
+  for (const [x, y] of s) g.set(x + 1, y, '#fff1a8');
+  g.set(8, 7, '#ffffff');
+});
+const bolt = [[9, 2], [8, 3], [8, 4], [7, 5], [7, 6], [6, 7], [7, 7], [8, 7], [9, 7], [9, 8], [8, 9], [8, 10], [7, 11], [7, 12], [6, 13]];
+function generator(g, on) {
+  g.noise(on ? ['#d84a3a', '#cf4434', '#e05545'] : ['#8e3b30', '#86372d', '#96402f']);
+  g.frame('#4a3a2e');
+  g.frame('#5e4a3a', 1);
+  for (const [x, y] of [[2, 2], [13, 2], [2, 13], [13, 13]]) g.set(x, y, '#c9b8a0');
+  for (const [x, y] of bolt) { g.set(x, y, on ? '#ffe27a' : '#b59a82'); g.set(x + 1, y, on ? '#fff3b8' : '#9c8470'); }
+}
+tile('generator_side', (g) => generator(g, true));
+tile('generator_off', (g) => generator(g, false));
+tile('generator_top', (g) => {
+  g.noise(['#3a2e25']);
+  for (let y = 3; y < 13; y += 3) g.rect(3, y, 10, 1, '#c94a39');
+  g.frame('#4a3a2e');
+});
+tile('piston_side', (g) => {
+  g.noise(STONE, 0, 4, 16, 16);
+  g.dots(['#7d7f7a'], 0.05);
+  g.rect(0, 0, 16, 4, '#c4ae88');
+  for (let x = 0; x < 16; x++) if (x % 5 === 0) g.set(x, 1, '#a48d6a');
+  g.rect(0, 4, 16, 1, '#5d6266');
+  g.rect(7, 7, 2, 6, '#6d6f6a');
+});
+tile('piston_face', (g) => {
+  g.noise(['#c4ae88', '#b9a27e', '#cbb692']);
+  g.frame('#7c8589');
+  g.frame('#9aa3a7', 1);
+  g.rect(6, 6, 4, 4, '#7c8589');
+  g.rect(7, 7, 2, 2, '#b8c0c4');
+});
+tile('piston_back', (g) => {
+  g.noise(STONE);
+  g.rect(5, 5, 6, 6, '#4e504c');
+  g.rect(6, 6, 4, 4, '#3a3c39');
+});
+function lamp(g, on) {
+  g.noise(on ? ['#ffd76a', '#ffdc7a', '#ffe08a'] : ['#7c6a50', '#76654c', '#826f54']);
+  if (on) for (let y = 5; y < 11; y++) for (let x = 5; x < 11; x++) g.set(x, y, Math.hypot(x - 7.5, y - 7.5) < 2 ? '#fffbe6' : '#fff1b8');
+  else g.dots(['#9a8766'], 0.08);
+  g.frame(on ? '#8a6a44' : '#4e3e2c');
+  g.rect(7, 0, 2, 16, on ? '#a37d50' : '#5a4632');
+  g.rect(0, 7, 16, 2, on ? '#a37d50' : '#5a4632');
+}
+tile('lamp_off', (g) => lamp(g, false));
+tile('lamp_on', (g) => lamp(g, true));
+tile('note_side', (g) => {
+  g.noise(['#7a4e33', '#6f472e', '#83553a']);
+  g.frame('#4f3222');
+  const n = [[9, 3], [10, 3], [11, 4], [11, 5], [8, 3], [8, 4], [8, 5], [8, 6], [8, 7], [8, 8], [8, 9], [8, 10], [6, 10], [7, 10], [5, 11], [6, 11], [7, 11], [8, 11], [6, 12], [7, 12]];
+  for (const [x, y] of n) g.set(x, y, '#fbe9cf');
+});
+tile('note_top', (g) => {
+  g.noise(['#7a4e33', '#6f472e']);
+  for (let y = 2; y < 14; y += 3) for (let x = 2; x < 14; x += 3) if (Math.hypot(x - 7, y - 7) < 6.5) g.rect(x, y, 2, 2, '#3e2618');
+  g.frame('#4f3222');
+});
+tile('firework_side', (g) => {
+  g.noise(['#e05a7a', '#d9516f', '#e66784']);
+  g.rect(7, 0, 2, 16, '#f5c84c');
+  g.rect(7, 0, 1, 16, '#ffe08a');
+  for (let i = 0; i < 6; i++) {
+    const x = Math.floor(g.r() * 16), y = Math.floor(g.r() * 16);
+    if (x > 5 && x < 10) continue;
+    g.set(x, y, '#fff3f7');
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) g.set(x + dx, y + dy, '#f7b7c8');
+  }
+});
+tile('firework_top', (g) => {
+  g.noise(['#e05a7a', '#d9516f']);
+  g.frame('#b8435f');
+  g.rect(6, 6, 4, 4, '#3a2e25');
+  g.set(7, 5, '#ff9a3c'); g.set(8, 4, '#ffd36a'); g.set(7, 4, '#ff7a2c');
+});
+tile('gold', (g) => {
+  g.noise(['#ffd34d', '#f5c43e', '#ffdc66']);
+  const c = [[4, 11], [5, 10], [6, 9], [7, 8], [8, 7], [9, 6], [5, 11], [6, 10], [7, 9], [8, 8], [9, 7], [10, 6], [6, 11], [7, 10], [8, 9], [9, 8]];
+  for (const [x, y] of c) g.set(x, y, '#ffaa2c');
+  for (const [x, y] of [[10, 5], [11, 4], [11, 5], [12, 4], [10, 4]]) g.set(x, y, '#7cc06a');
+  g.dots(['#fff8d6'], 0.05);
+  g.frame('#e09d1c');
+});
+
+const tileCanvases = {};
+let atlasW = 0, atlasH = 0;
+
 export function createAtlas() {
+  createAtlasSizes();
   const canvas = document.createElement('canvas');
-  canvas.width = ATLAS_COLS * TILE;
-  canvas.height = ATLAS_ROWS * TILE;
+  canvas.width = atlasW;
+  canvas.height = atlasH;
   const ctx = canvas.getContext('2d');
-  const img = ctx.createImageData(canvas.width, canvas.height);
-  const r = rng(7);
-  const grain = () => 0.9 + r() * 0.1;
-
-  paintTile(img, 0, 0, () => 0.88 + r() * 0.12); // GRAIN
-  paintTile(img, 1, 0, (x, y) => { // PLANKS
-    const seam = y % 4 === 3 ? 0.78 : 1;
-    const joint = (x + (Math.floor(y / 4) % 2) * 8) % 16 === 0 ? 0.82 : 1;
-    return seam * joint * (0.9 + r() * 0.08);
+  const img = ctx.createImageData(atlasW, atlasH);
+  PAINTERS.forEach(([name, fn], i) => {
+    const g = grid(seedOf(name));
+    fn(g);
+    // small canvas per tile for icons
+    const tc = document.createElement('canvas');
+    tc.width = tc.height = TILE;
+    const tx = tc.getContext('2d');
+    const ti = tx.createImageData(TILE, TILE);
+    const rgb = g.px.map((h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]);
+    for (let k = 0; k < TILE * TILE; k++) { ti.data[k * 4] = rgb[k][0]; ti.data[k * 4 + 1] = rgb[k][1]; ti.data[k * 4 + 2] = rgb[k][2]; ti.data[k * 4 + 3] = 255; }
+    tx.putImageData(ti, 0, 0);
+    tileCanvases[name] = tc;
+    const ox = (i % COLS) * CELL, oy = Math.floor(i / COLS) * CELL;
+    for (let y = -PAD; y < TILE + PAD; y++) for (let x = -PAD; x < TILE + PAD; x++) {
+      const sx = Math.max(0, Math.min(TILE - 1, x)), sy = Math.max(0, Math.min(TILE - 1, y));
+      const c = rgb[sy * TILE + sx];
+      const o = ((oy + y + PAD) * atlasW + ox + x + PAD) * 4;
+      img.data[o] = c[0]; img.data[o + 1] = c[1]; img.data[o + 2] = c[2]; img.data[o + 3] = 255;
+    }
   });
-  paintTile(img, 2, 0, (x, y) => { // BRICK
-    const row = Math.floor(y / 4);
-    const mortarH = y % 4 === 3;
-    const mortarV = (x + (row % 2) * 4) % 8 === 7;
-    return mortarH || mortarV ? 1.12 : 0.88 + r() * 0.1;
-  });
-  paintTile(img, 3, 0, () => (r() < 0.16 ? 0.7 : grain())); // LEAVES
-  paintTile(img, 0, 1, (x) => (x % 4 === 0 ? 0.8 : 0.92 + r() * 0.08)); // BARK
-  paintTile(img, 1, 1, () => (r() < 0.1 ? 0.78 : r() < 0.06 ? 1.08 : grain())); // SPECKLE
-  paintTile(img, 2, 1, (x, y) => { // GLOW (framed)
-    const edge = x === 0 || y === 0 || x === 15 || y === 15 ? 0.75 : 1;
-    const inner = x > 4 && x < 11 && y > 4 && y < 11 ? 1.08 : 1;
-    return edge * inner * (0.95 + r() * 0.05);
-  });
-  paintTile(img, 3, 1, () => 0.96 + r() * 0.04); // SMOOTH
   ctx.putImageData(img, 0, 0);
-
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestMipmapLinearFilter;
@@ -70,15 +329,35 @@ export function createAtlas() {
 }
 
 export function tileUV(tile) {
-  const col = tile % ATLAS_COLS;
-  const row = Math.floor(tile / ATLAS_COLS);
-  const pad = 0.02 / ATLAS_COLS;
-  const u0 = col / ATLAS_COLS + pad;
-  const u1 = (col + 1) / ATLAS_COLS - pad;
-  const v1 = 1 - row / ATLAS_ROWS - pad;
-  const v0 = 1 - (row + 1) / ATLAS_ROWS + pad;
+  if (!atlasW) createAtlasSizes();
+  const col = tile % COLS, row = Math.floor(tile / COLS);
+  const x0 = col * CELL + PAD, y0 = row * CELL + PAD;
+  const u0 = x0 / atlasW, u1 = (x0 + TILE) / atlasW;
+  const v1 = 1 - y0 / atlasH, v0 = 1 - (y0 + TILE) / atlasH;
   return [u0, v0, u1, v1];
 }
+function createAtlasSizes() {
+  atlasW = COLS * CELL;
+  const h = Math.ceil(PAINTERS.length / COLS) * CELL;
+  atlasH = 1 << Math.ceil(Math.log2(h)); // power of two for clean mipmaps
+}
+
+// Which tile each block face uses: [top, side, bottom], plus a lit variant for powered blocks.
+const T3 = (t, s = t, b = s) => ({ top: TILES[t], side: TILES[s], bottom: TILES[b] });
+export const BLOCK_TILES = [];
+const BT = {
+  grass: T3('grass_top', 'grass_side', 'dirt'), dirt: T3('dirt'), stone: T3('stone'), log: T3('log_top', 'log_side', 'log_top'),
+  leaves: T3('leaves'), planks: T3('planks'), sand: T3('sand'), brick: T3('brick'), carrot: T3('carrot_top', 'carrot_side', 'carrot_side'),
+  candy: T3('candy_top', 'candy_side', 'dirt'), cloud: T3('cloud'), butter: T3('sunshine'), mint: T3('mint'), sky: T3('star'),
+  snow: T3('snow'), rail: T3('white'), loop: T3('white'), wire: T3('white'), portal: T3('white'),
+  generator: { ...T3('generator_top', 'generator_side', 'generator_top'), off: T3('generator_top', 'generator_off', 'generator_top') },
+  piston: { ...T3('piston_face', 'piston_side', 'piston_back') }, head: T3('piston_face'),
+  lamp: { ...T3('lamp_off'), on: T3('lamp_on') }, glassy: T3('ice'), pinkleaf: T3('blossom'), goldcarrot: T3('gold'),
+  note: T3('note_top', 'note_side', 'note_top'), firework: T3('firework_top', 'firework_side', 'firework_side'),
+};
+for (const b of BLOCKS) if (b) BLOCK_TILES[b.id] = BT[b.key] || T3('white');
+export const WHITE_TILE = TILES.white;
+export const PLANKS_TILE = TILES.planks;
 
 // Colour lookup tables per block: [top, side, bottom, sideTop, on] as linear 0..255 rgb triples.
 const hex = (h) => {
@@ -94,11 +373,6 @@ export const COLORS = BLOCKS.map((b) => b && {
 // Isometric block icons for the hotbar / inventory (drawn once, cached as data URLs).
 
 const iconCache = new Map();
-function shade(h, f) {
-  const c = new THREE.Color(h);
-  c.multiplyScalar(f);
-  return `#${c.getHexString()}`;
-}
 
 export function itemIcon(item) {
   if (iconCache.has(item.key)) return iconCache.get(item.key);
@@ -139,41 +413,31 @@ export function itemIcon(item) {
     g.beginPath(); g.moveTo(8, 44); g.bezierCurveTo(24, 20, 40, 60, 56, 26); g.stroke();
   } else {
     const b = BLOCKS.find((x) => x && x.key === item.block);
-    const top = b.on && item.key === 'lamp' ? b.on : b.top;
-    const sideTop = b.sideTop;
-    // isometric cube
-    const cx = 32, cy = 33, w = 24, h = 13, d = 26;
-    g.fillStyle = top;
-    g.beginPath(); g.moveTo(cx, cy - h * 2 + 2); g.lineTo(cx + w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx - w, cy - h + 2); g.closePath(); g.fill();
-    g.fillStyle = shade(b.side, 0.82);
-    g.beginPath(); g.moveTo(cx - w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx, cy + d); g.lineTo(cx - w, cy + d - h); g.closePath(); g.fill();
-    g.fillStyle = shade(b.side, 0.66);
-    g.beginPath(); g.moveTo(cx + w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx, cy + d); g.lineTo(cx + w, cy + d - h); g.closePath(); g.fill();
-    if (sideTop) {
-      g.fillStyle = shade(sideTop, 0.8);
-      g.beginPath(); g.moveTo(cx - w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx, cy + 8); g.lineTo(cx - w, cy - h + 8); g.closePath(); g.fill();
-      g.fillStyle = shade(sideTop, 0.65);
-      g.beginPath(); g.moveTo(cx + w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx, cy + 8); g.lineTo(cx + w, cy - h + 8); g.closePath(); g.fill();
-    }
-    if (item.key === 'piston') {
-      g.fillStyle = '#b9a27e';
-      g.beginPath(); g.moveTo(cx, cy - h * 2 + 2); g.lineTo(cx + w, cy - h + 2); g.lineTo(cx, cy + 2); g.lineTo(cx - w, cy - h + 2); g.closePath(); g.fill();
-    }
-    if (item.key === 'note') {
-      g.fillStyle = '#fffaf3';
-      g.beginPath(); g.ellipse(29, 32, 5, 4, -0.4, 0, 7); g.fill();
-      g.fillRect(32, 14, 3, 18);
-      g.beginPath(); g.moveTo(35, 14); g.quadraticCurveTo(42, 17, 40, 24); g.lineTo(37, 22); g.quadraticCurveTo(38, 18, 35, 18); g.fill();
-    }
-    if (item.key === 'firework') {
-      g.fillStyle = '#ffe7a3';
-      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; g.beginPath(); g.arc(32 + Math.cos(a) * 9, 16 + Math.sin(a) * 6, 2.4, 0, 7); g.fill(); }
-      g.beginPath(); g.arc(32, 16, 3, 0, 7); g.fill();
-    }
-    if (item.key === 'generator') {
-      g.fillStyle = '#ffe7a3';
-      g.beginPath(); g.moveTo(34, 10); g.lineTo(26, 24); g.lineTo(33, 24); g.lineTo(29, 36); g.lineTo(39, 20); g.lineTo(32, 20); g.closePath(); g.fill();
-    }
+    const t = BLOCK_TILES[b.id];
+    const lit = t.on && (item.key === 'lamp') ? t.on : t;
+    const name = (i) => Object.keys(TILES).find((k) => TILES[k] === i);
+    const top = tileCanvases[name(lit.top)], side = tileCanvases[name(lit.side)];
+    // isometric cube built from the real block tiles, so icons match the world
+    const cx = 32, cy = 31, w = 24, h = 13, d = 27;
+    g.imageSmoothingEnabled = false;
+    const face = (img, a, bb, cc, dd, e, f, poly, dark) => {
+      g.save();
+      g.beginPath(); poly.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); g.clip();
+      g.setTransform(a, bb, cc, dd, e, f);
+      g.drawImage(img, 0, 0);
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      if (dark) { g.fillStyle = `rgba(30,24,20,${dark})`; g.fillRect(0, 0, s, s); }
+      g.restore();
+    };
+    const T = [[cx - w, cy - h], [cx, cy - 2 * h], [cx + w, cy - h], [cx, cy]];
+    const L = [[cx - w, cy - h], [cx, cy], [cx, cy + d], [cx - w, cy - h + d]];
+    const R = [[cx, cy], [cx + w, cy - h], [cx + w, cy - h + d], [cx, cy + d]];
+    face(top, w / 16, -h / 16, w / 16, h / 16, cx - w, cy - h, T, 0);
+    face(side, w / 16, h / 16, 0, d / 16, cx - w, cy - h, L, 0.12);
+    face(side, w / 16, -h / 16, 0, d / 16, cx, cy, R, 0.3);
+    g.strokeStyle = 'rgba(42,30,22,0.35)';
+    g.lineWidth = 1;
+    g.beginPath(); [T, L, R].forEach((p) => { p.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath(); }); g.stroke();
   }
   const url = c.toDataURL();
   iconCache.set(item.key, url);

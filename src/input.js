@@ -56,7 +56,24 @@ export class Input {
       if (e.button === 0) this.h.onBreak?.();
       if (e.button === 2) this.h.onPlace?.();
     });
-    this.layer.addEventListener('wheel', (e) => this.h.onWheel?.(Math.sign(e.deltaY)), { passive: true });
+    // Scroll to change block. Trackpads send a stream of tiny deltas, so add them up and step at most
+    // one slot per short interval; a mouse wheel notch (~100) still moves exactly one slot.
+    this.wheelAcc = 0; this.wheelLast = 0; this.wheelStep = 0;
+    const onWheel = (e) => {
+      if (this.h.isPaused()) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const now = performance.now();
+      if (now - this.wheelLast > 220) this.wheelAcc = 0;
+      this.wheelLast = now;
+      this.wheelAcc += e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      if (Math.abs(this.wheelAcc) >= 70 && now - this.wheelStep > 190) {
+        this.h.onWheel?.(Math.sign(this.wheelAcc));
+        this.wheelAcc = 0;
+        this.wheelStep = now;
+      }
+    };
+    this.layer.addEventListener('wheel', onWheel, { passive: true });
+    document.getElementById('hotbar').addEventListener('wheel', onWheel, { passive: true });
   }
 
   pdown(e) {
