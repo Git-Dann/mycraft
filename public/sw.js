@@ -1,5 +1,5 @@
 // Offline support: network-first for pages, cache-first for hashed assets.
-const CACHE = 'blockhop-v1';
+const CACHE = 'mycraft-v1';
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));

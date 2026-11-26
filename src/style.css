@@ -1,4 +1,4 @@
-/* Blockhop UI. Palette and tone follow Cozy Coaster: cream paper, terracotta accent, rounded type. */
+/* MyCraft UI. Palette and tone follow Cozy Coaster: cream paper, terracotta accent, rounded type. */
 :root {
   --cream: #f5ebdd;
   --paper: #fbf6ee;
@@ -129,7 +129,7 @@ body.riding .small, body.riding #btn-down, body.riding #hotbar { display: none; 
 body.at-title #title { display: grid; }
 .title-card { width: min(560px, 100%); display: grid; justify-items: center; gap: 14px; text-align: center; animation: rise 600ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 @keyframes rise { from { opacity: 0; transform: translateY(14px); } }
-.logo { width: min(520px, 92vw); filter: drop-shadow(0 8px 20px rgba(52, 60, 55, 0.25)); }
+.logo { width: min(520px, 92vw, calc((100dvh - 250px) * 2.1)); min-width: 240px; filter: drop-shadow(0 8px 20px rgba(52, 60, 55, 0.25)); }
 .logo svg { width: 100%; height: auto; display: block; }
 .logo svg rect, .logo svg g { transform-box: fill-box; }
 .title-card .logo svg { animation: bob 4s ease-in-out infinite; }
@@ -140,7 +140,6 @@ body.at-title #title { display: grid; }
 .row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
 .title-actions .pill:not(.primary) { background: var(--surface); box-shadow: var(--e1); }
 @media (max-height: 460px) {
-  .logo { width: min(400px, 60vw); }
   .title-card { gap: 8px; }
   .big-pill { min-height: 48px; }
 }

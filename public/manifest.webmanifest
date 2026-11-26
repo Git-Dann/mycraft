@@ -1,6 +1,6 @@
 {
-  "name": "Blockhop",
-  "short_name": "Blockhop",
+  "name": "MyCraft",
+  "short_name": "MyCraft",
   "description": "Build with blocks, ride your own coaster, hop to Bunny Meadow.",
   "start_url": "/",
   "display": "fullscreen",

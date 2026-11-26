@@ -1,4 +1,4 @@
-# Blockhop
+# MyCraft
 
 Build with blocks, ride your own roller coaster, and hop through a carrot portal to Bunny Meadow. Runs in the browser, made for phones first.
 
@@ -17,7 +17,7 @@ Deployed as a static site on Cloudflare Pages (build `npm run build`, output `di
 
 ## Audit of the original
 
-| Area | Problem in the original | What Blockhop does |
+| Area | Problem in the original | What MyCraft does |
 |---|---|---|
 | Rendering | One `Mesh` per block: about 3,000 draw calls for a tiny 33x33 world | Chunked meshes with hidden faces removed: 64 draw calls for a 128x128 world |
 | Lighting | Flat Lambert colours | Baked ambient occlusion and face shading on an unlit material, which is cheaper and looks softer |

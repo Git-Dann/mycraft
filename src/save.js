@@ -1,6 +1,6 @@
 // Saves store only the edits on top of deterministic terrain, packed as base64 Uint32 pairs.
-const KEY = 'blockhop.save.v1';
-const SETTINGS = 'blockhop.settings.v1';
+const KEY = 'mycraft.save.v1';
+const SETTINGS = 'mycraft.settings.v1';
 
 function packEdits(map) {
   const arr = new Uint32Array(map.size * 2);

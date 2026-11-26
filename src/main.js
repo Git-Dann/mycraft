@@ -672,8 +672,8 @@ function startGame() {
   state.started = true;
   state.paused = false;
   input.reset();
-  if (!localStorage.getItem('blockhop.seenHelp')) {
-    try { localStorage.setItem('blockhop.seenHelp', '1'); } catch { /* ignore */ }
+  if (!localStorage.getItem('mycraft.seenHelp')) {
+    try { localStorage.setItem('mycraft.seenHelp', '1'); } catch { /* ignore */ }
     setTimeout(() => toast(input.touchMode ? 'Tap to build, hold to break. Try the Cart on the track!' : 'Click to play. Left click breaks, right click builds'), 600);
   }
 }
@@ -878,7 +878,7 @@ boot();
 requestAnimationFrame(frame);
 
 // Debug hook for automated checks (no effect on play)
-window.__blockhop = { state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
+window.__mycraft = { state, player, coaster, get world() { return world; }, startRide, stopRide, useAt, breakAt, targetFromScreen, travel, toast };
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
