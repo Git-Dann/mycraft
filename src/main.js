@@ -270,7 +270,7 @@ const ray = new THREE.Vector3();
 const ndc = new THREE.Vector2();
 const raycaster = new THREE.Raycaster();
 
-function raycast(ox, oy, oz, dx, dy, dz, maxDist = 7) {
+function raycast(ox, oy, oz, dx, dy, dz, maxDist = 8) {
   hit.ok = false;
   let x = Math.floor(ox), y = Math.floor(oy), z = Math.floor(oz);
   const sx = Math.sign(dx), sy = Math.sign(dy), sz = Math.sign(dz);
@@ -360,6 +360,36 @@ function runCircuits() {
   }
 }
 
+// Undo: the last 60 builds and breaks by the player
+const undoStack = [];
+function remember(x, y, z) {
+  const i = world.idx(x, y, z);
+  undoStack.push({ dim: state.dim, x, y, z, id: world.data[i], meta: world.meta.get(i) });
+  if (undoStack.length > 60) undoStack.shift();
+  updateUndoUI();
+}
+function undo() {
+  const u = undoStack.pop();
+  updateUndoUI();
+  if (!u) { toast('Nothing to undo'); return; }
+  if (u.dim !== state.dim) { toast('That change was in the other world'); return; }
+  const cur = world.get(u.x, u.y, u.z);
+  world.set(u.x, u.y, u.z, u.id, u.meta);
+  if (u.id === 0) audio.breakBlock(soundKind(cur)); else audio.place(soundKind(u.id));
+  flashAt(u.x, u.y, u.z);
+  afterEdit(u.id || cur);
+  if (CIRCUIT.has(cur)) runCircuits();
+}
+function updateUndoUI() { $('btn-undo').classList.toggle('dim', undoStack.length === 0); }
+
+// Touch feedback: briefly outline the block that was just built or broken
+let flashUntil = 0;
+const flashPos = new THREE.Vector3();
+function flashAt(x, y, z) {
+  flashPos.set(x + 0.5, y + 0.5, z + 0.5);
+  flashUntil = performance.now() + 260;
+}
+
 function breakAt(h) {
   if (!h.ok) return;
   const { x, y, z, id } = h;
@@ -372,7 +402,9 @@ function breakAt(h) {
     const [dx, dy, dz] = DIRS[world.getMeta(x, y, z)] || DIRS[2];
     if (world.get(x - dx, y - dy, z - dz) === B.piston) world.set(x - dx, y - dy, z - dz, AIR);
   }
+  remember(x, y, z);
   world.set(x, y, z, AIR);
+  flashAt(x, y, z);
   if (id === B.carrot) collapsePortals(x, y, z);
   audio.breakBlock(soundKind(id));
   burst(x, y, z, id);
@@ -425,7 +457,7 @@ function useAt(h) {
   if (existing !== AIR && existing !== B.portal) return;
   if (SOLID[id]) {
     const p = player.pos, hw = player.hw;
-    if (x + 1 > p.x - hw && x < p.x + hw && z + 1 > p.z - hw && z < p.z + hw && y + 1 > p.y && y < p.y + player.height) return;
+    if (x + 1 > p.x - hw && x < p.x + hw && z + 1 > p.z - hw && z < p.z + hw && y + 1 > p.y && y < p.y + player.height) { toast('Step back a little to build there'); return; }
   }
   let meta;
   if (id === B.loop) {
@@ -436,7 +468,10 @@ function useAt(h) {
     meta = DIRS.findIndex(([dx, dy, dz]) => dx === h.nx && dy === h.ny && dz === h.nz);
     if (meta < 0) meta = 2;
   }
+  remember(x, y, z);
   world.set(x, y, z, id, meta);
+  flashAt(x, y, z);
+  navigator.vibrate?.(6);
   audio.place(soundKind(id));
   afterEdit(id);
   if (id === B.generator) audio.power();
@@ -641,6 +676,7 @@ holdButton($('btn-jump'), () => {
 }, () => { jumpHeld = false; });
 holdButton($('btn-down'), () => { downHeld = true; }, () => { downHeld = false; });
 $('btn-fly').addEventListener('click', toggleFly);
+$('btn-undo').addEventListener('click', () => undo());
 $('btn-mode').addEventListener('click', () => { state.tapBreaks = !state.tapBreaks; updateModeUI(); audio.tap(); });
 $('btn-exit').addEventListener('click', () => stopRide());
 $('btn-menu').addEventListener('click', () => openSheet('menu'));
@@ -684,6 +720,7 @@ addEventListener('pointerdown', () => audio.unlock(), { once: true });
 // ---------------------------------------------------------------------------------------------------------
 // Input wiring
 
+let holdTarget = null;
 const input = new Input($('touch-layer'), {
   isPaused: () => state.paused,
   canLock: () => state.started && !state.paused,
@@ -696,8 +733,11 @@ const input = new Input($('touch-layer'), {
     if (coaster.riding) return;
     const h = targetFromScreen(x, y);
     if (h.ok) { breakAt(h); navigator.vibrate?.(8); }
+    // show what the next repeat will break
+    const n = targetFromScreen(x, y);
+    holdTarget = n.ok ? [n.x, n.y, n.z] : null;
   },
-  onHoldEnd: () => {},
+  onHoldEnd: () => { holdTarget = null; },
   onBreak: () => { if (coaster.riding) return; breakAt(targetFromScreen()); },
   onPlace: () => { if (coaster.riding) return; useAt(targetFromScreen()); },
   onWheel: (d) => selectSlot(state.slot + d),
@@ -711,6 +751,7 @@ const input = new Input($('touch-layer'), {
     if (e.code === 'KeyE') { if (openSheetId === 'inventory') closeSheet('inventory'); else if (state.started) openInventory(); }
     if (e.code === 'KeyM') $('tog-music').click();
     if (e.code === 'KeyQ' && coaster.riding) stopRide();
+    if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey) && state.started) undo();
     if (e.code === 'Space') {
       const now = performance.now();
       if (!e.repeat && now - lastJumpTap < 280) toggleFly();
@@ -721,6 +762,12 @@ const input = new Input($('touch-layer'), {
   },
 });
 input.sensitivity = settings.sensitivity;
+$('look-speed').value = String(settings.sensitivity);
+$('look-speed').addEventListener('input', (e) => {
+  settings.sensitivity = Number(e.target.value);
+  input.sensitivity = settings.sensitivity;
+  saveSettings(settings);
+});
 
 // ---------------------------------------------------------------------------------------------------------
 // Save / load
@@ -740,6 +787,7 @@ function persist() {
 }
 
 function newWorld() {
+  undoStack.length = 0;
   clearGame();
   state.seed = (Math.random() * 1e9) | 0;
   state.worlds = {};
@@ -782,6 +830,7 @@ function boot() {
   updateModeUI();
   setToggle('tog-music', settings.music);
   setToggle('tog-sfx', settings.sfx);
+  updateUndoUI();
   audio.musicOn = settings.music;
   audio.sfxOn = settings.sfx;
   document.querySelectorAll('.logo').forEach((el) => { el.innerHTML = logoSVG(); });
@@ -849,14 +898,19 @@ function frame(now) {
     const h = targetFromScreen();
     highlight.visible = h.ok;
     if (h.ok) highlight.position.set(h.x + 0.5, h.y + 0.5, h.z + 0.5);
+  } else if (state.started && !coaster.riding && holdTarget) {
+    highlight.visible = true;
+    highlight.position.set(holdTarget[0] + 0.5, holdTarget[1] + 0.5, holdTarget[2] + 0.5);
+  } else if (state.started && !coaster.riding && now < flashUntil) {
+    highlight.visible = true;
+    highlight.position.copy(flashPos);
   } else highlight.visible = false;
 
   remesh(world.dirty.size > 8 ? 6 : 3);
   portalMat.opacity = 0.62 + Math.sin(now * 0.004) * 0.12;
   sky.update(dt, camera.position);
   audio.tick();
-  renderer.render(scene, camera);
-
+  // Resolution changes happen before drawing: resizing after a draw clears the canvas and flashes blank.
   // Dynamic resolution: keep frames smooth on phones, sharpen when there is headroom
   frameAcc += rawDt; frameCount++;
   if (rawDt > 1 / 40) slowFrames++;
@@ -872,6 +926,9 @@ function frame(now) {
     }
     frameAcc = 0; frameCount = 0; slowFrames = 0;
   }
+
+  renderer.render(scene, camera);
+
 }
 
 boot();

@@ -29,7 +29,7 @@ export const BLOCKS = [
   { id: 19, key: 'wire', name: 'Wire', shape: 'wire', top: '#7a2e25', side: '#7a2e25', bottom: '#7a2e25', on: '#ff5a3d', tile: T.SMOOTH, solid: false },
   { id: 20, key: 'piston', name: 'Piston', top: '#b9a27e', side: '#8e979b', bottom: '#7c8589', tile: T.PLANKS, solid: true },
   { id: 21, key: 'head', name: 'Piston Head', shape: 'head', top: '#b9a27e', side: '#a48d6a', bottom: '#a48d6a', tile: T.PLANKS, solid: true, hidden: true },
-  { id: 22, key: 'lamp', name: 'Lamp', top: '#7c6a50', side: '#7c6a50', bottom: '#6a5a44', on: '#ffe7a3', tile: T.GLOW, solid: true },
+  { id: 22, key: 'lamp', name: 'Lamp', top: '#7c6a50', side: '#7c6a50', bottom: '#6a5a44', on: '#ffd76a', tile: T.GLOW, solid: true },
   { id: 23, key: 'portal', name: 'Portal', shape: 'portal', top: '#ff8fd0', side: '#ff8fd0', bottom: '#ff8fd0', tile: T.SMOOTH, solid: false, hidden: true },
   { id: 24, key: 'glassy', name: 'Ice', top: '#cfe8f2', side: '#c4dfeb', bottom: '#b7d3df', tile: T.SMOOTH, solid: true },
   { id: 25, key: 'pinkleaf', name: 'Blossom', top: '#f6b7cf', side: '#eeaac4', bottom: '#e09ab6', tile: T.LEAVES, solid: true },

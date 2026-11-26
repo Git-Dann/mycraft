@@ -105,7 +105,13 @@ function cube(world, x, y, z, id, powered) {
     if (ny < 0) continue;
     let c = F.kind === 'top' ? col.top : F.kind === 'bottom' ? col.bottom : col.side;
     if (glow && col.on) c = col.on;
-    const tile = F.kind === 'top' && def.topTile !== undefined ? def.topTile : F.kind === 'bottom' && def.topTile !== undefined ? def.topTile : def.tile;
+    let tile = F.kind === 'top' && def.topTile !== undefined ? def.topTile : F.kind === 'bottom' && def.topTile !== undefined ? def.topTile : def.tile;
+    if (id === B.piston) {
+      // The pushing face (wooden plate) points the way the piston was placed; the body is stone
+      const facing = world.getMeta(x, y, z);
+      c = f === facing ? col.top : col.side;
+      tile = f === facing ? 1 : 5;
+    }
     // AO samples
     const ao = [0, 0, 0, 0];
     for (let k = 0; k < 4; k++) {
