@@ -489,6 +489,20 @@ export class Audio {
     [0, 7, 12].forEach((s, i) => this.tone(this.sfx, { at: t + i * 0.07, freq: midiHz(76 + s), gain: 0.06, attack: 0.004, decay: 0.5 }));
   }
 
+  /** Quiet footsteps that match the ground. */
+  footstep(kind) {
+    if (!this.ok()) return;
+    const t = this.now;
+    const v = 0.5 + Math.random() * 0.3;
+    if (kind === 'snow') this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.09 * v, attack: 0.01, decay: 0.12, type: 'bandpass', freq: 2600, q: 0.6, sweep: 1400 });
+    else if (kind === 'ice') this.tone(this.sfx, { at: t, freq: 1800 + Math.random() * 400, gain: 0.02 * v, attack: 0.002, decay: 0.08 });
+    else if (kind === 'wood') this.tone(this.sfx, { at: t, freq: 220 + Math.random() * 40, glide: 160, glideTime: 0.05, gain: 0.07 * v, attack: 0.002, decay: 0.07, type: 'triangle' });
+    else if (kind === 'stone') this.noise(this.sfx, { at: t, gain: 0.06 * v, attack: 0.001, decay: 0.04, type: 'bandpass', freq: 1500, q: 1.5 });
+    else if (kind === 'sand') this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.07 * v, attack: 0.01, decay: 0.1, type: 'highpass', freq: 1800 });
+    else if (kind === 'soft') this.tone(this.sfx, { at: t, freq: 300, glide: 420, glideTime: 0.06, gain: 0.03 * v, attack: 0.005, decay: 0.08 });
+    else this.noise(this.sfx, { at: t, buffer: this.pink, gain: 0.07 * v, attack: 0.005, decay: 0.07, type: 'lowpass', freq: 900 });
+  }
+
   // --- delight sounds ---------------------------------------------------------------------------------------
   /** Springy trampoline boing; bigger bounces go higher in pitch. */
   bounce(strength = 1) {

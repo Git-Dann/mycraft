@@ -130,7 +130,7 @@ export class World {
     const next = new Uint8Array(this.powered.length);
     const queue = [];
     const size = this.data.length;
-    for (let i = 0; i < size; i++) if (this.data[i] === B.generator) { next[i] = 1; queue.push(i); }
+    for (let i = 0; i < size; i++) if (this.data[i] === B.generator && this.meta.get(i) !== 1) { next[i] = 1; queue.push(i); } // meta 1 = switched off
     const WD = W * D;
     while (queue.length) {
       const i = queue.pop();

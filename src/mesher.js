@@ -2,7 +2,9 @@
 // Writes into reusable typed scratch buffers, then copies out exactly-sized arrays for the GPU.
 import * as THREE from 'three';
 import { BLOCKS, BY_KEY, CUBE } from './blocks.js';
-import { COLORS, tileUV } from './textures.js';
+import { COLORS, tileUV, BLOCK_TILES, WHITE_TILE, PLANKS_TILE } from './textures.js';
+
+const WHITE = [255, 255, 255];
 import { CHUNK, H, HDIRS, hash3 } from './world.js';
 
 const B = BY_KEY;
@@ -96,42 +98,37 @@ export function meshChunk(world, cx, cz) {
 }
 
 function cube(world, x, y, z, id, powered) {
-  const col = COLORS[id];
   const def = BLOCKS[id];
-  const jitter = 0.95 + hash3(x, y, z) * 0.08;
-  const glow = (id === B.lamp && powered) || id === B.generator || !!def.glow;
+  const tiles = BLOCK_TILES[id];
+  const jitter = 0.96 + hash3(x, y, z) * 0.06;
+  const genOff = id === B.generator && world.getMeta(x, y, z) === 1;
+  const lampOn = id === B.lamp && powered;
+  // Glowing blocks keep full brightness at night: lit lamps, running generators, golden carrot, Sunshine, Star blocks
+  const glow = lampOn || (id === B.generator && !genOff) || !!def.glow || id === B.butter || id === B.sky;
   const out = glow ? glowBuf : opaque;
+  const set = genOff ? tiles.off : lampOn ? tiles.on : tiles;
+  const facing = id === B.piston ? world.getMeta(x, y, z) : -1;
   for (let f = 0; f < 6; f++) {
     const F = FACES[f];
     const nx = x + F.n[0], ny = y + F.n[1], nz = z + F.n[2];
-    if (ny >= 0 && CUBE[world.get(nx, ny, nz)]) continue;
-    if (ny < 0) continue;
-    let c = F.kind === 'top' ? col.top : F.kind === 'bottom' ? col.bottom : col.side;
-    if (glow && col.on) c = col.on;
-    let tile = F.kind === 'top' && def.topTile !== undefined ? def.topTile : F.kind === 'bottom' && def.topTile !== undefined ? def.topTile : def.tile;
-    if (id === B.piston) {
-      // The pushing face (wooden plate) points the way the piston was placed; the body is stone
-      const facing = world.getMeta(x, y, z);
-      c = f === facing ? col.top : col.side;
-      tile = f === facing ? 1 : 5;
+    if (ny < 0 || CUBE[world.get(nx, ny, nz)]) continue;
+    let tile = F.kind === 'top' ? set.top : F.kind === 'bottom' ? set.bottom : set.side;
+    if (facing >= 0) {
+      // the pushing plate faces the way the piston was placed; the opposite face shows its back
+      tile = f === facing ? tiles.top : (f ^ 1) === facing ? tiles.bottom : tiles.side;
     }
-    // AO samples
     const ao = [0, 0, 0, 0];
     for (let k = 0; k < 4; k++) {
       const a = k === 1 || k === 2 ? 1 : -1;
-      const b = k >= 2 ? 1 : -1;
+      const bb = k >= 2 ? 1 : -1;
       const s1 = CUBE[world.get(nx + F.u[0] * a, ny + F.u[1] * a, nz + F.u[2] * a)];
-      const s2 = CUBE[world.get(nx + F.v[0] * b, ny + F.v[1] * b, nz + F.v[2] * b)];
-      const cr = CUBE[world.get(nx + F.u[0] * a + F.v[0] * b, ny + F.u[1] * a + F.v[1] * b, nz + F.u[2] * a + F.v[2] * b)];
+      const s2 = CUBE[world.get(nx + F.v[0] * bb, ny + F.v[1] * bb, nz + F.v[2] * bb)];
+      const cr = CUBE[world.get(nx + F.u[0] * a + F.v[0] * bb, ny + F.u[1] * a + F.v[1] * bb, nz + F.u[2] * a + F.v[2] * bb)];
       ao[k] = s1 && s2 ? 0 : 3 - (s1 + s2 + cr);
     }
-    const shadeBase = glow ? 1.05 : F.shade * jitter;
+    const shadeBase = glow ? 1 : F.shade * jitter;
     const flip = ao[0] + ao[2] < ao[1] + ao[3];
-    if (F.kind === 'side' && col.sideTop) {
-      // grass-style side: dirt below, a green lip on top
-      emitFace(out, x, y, z, F, c, tile, ao, shadeBase, 0, 0.72, flip, glow);
-      emitFace(out, x, y, z, F, col.sideTop, tile, ao, shadeBase * 0.92, 0.72, 1, flip, glow);
-    } else emitFace(out, x, y, z, F, c, tile, ao, shadeBase, 0, 1, flip, glow);
+    emitFace(out, x, y, z, F, WHITE, tile, ao, shadeBase, 0, 1, flip, glow);
   }
 }
 
@@ -241,7 +238,7 @@ function plank(buf, mx, mz, ux, uz, hl, hw, y0, y1, c) {
   const vx = -uz, vz = ux;
   const P = (s, t) => [mx + ux * s * hl + vx * t * hw, mz + uz * s * hl + vz * t * hw];
   const q = [P(-1, -1), P(1, -1), P(1, 1), P(-1, 1)];
-  const [u0, v0] = tileUV(1);
+  const [u0, v0] = tileUV(WHITE_TILE);
   const quad = (a, b, cc, d, sh) => {
     buf.ensure(4);
     const r = Math.min(255, c[0] * sh), g = Math.min(255, c[1] * sh), bl = Math.min(255, c[2] * sh);
@@ -260,7 +257,7 @@ function plank(buf, mx, mz, ux, uz, hl, hw, y0, y1, c) {
 }
 
 function slab(buf, ax, az, bx, bz, y0, y1, c) {
-  box(buf, Math.min(ax, bx), y0, Math.min(az, bz), Math.max(ax, bx), y1, Math.max(az, bz), c, 1);
+  box(buf, Math.min(ax, bx), y0, Math.min(az, bz), Math.max(ax, bx), y1, Math.max(az, bz), c, WHITE_TILE);
 }
 
 // A thin sloped bar between two points (top + two sides).
@@ -269,7 +266,7 @@ function beam(buf, ax, ay, az, bx, by, bz, c) {
   const len = Math.hypot(dx, dz) || 1;
   const px = (-dz / len) * 0.045, pz = (dx / len) * 0.045;
   const t = 0.05;
-  const [u0, v0] = tileUV(7);
+  const [u0, v0] = tileUV(WHITE_TILE);
   const quads = [
     [[ax - px, ay, az - pz], [ax + px, ay, az + pz], [bx + px, by, bz + pz], [bx - px, by, bz - pz], 1.05],
     [[ax + px, ay - t, az + pz], [bx + px, by - t, bz + pz], [bx + px, by, bz + pz], [ax + px, ay, az + pz], 0.75],
@@ -292,7 +289,7 @@ function wire(world, x, y, z, powered) {
   const c = powered ? def.on : def.top;
   const bright = powered ? 1.15 : 1;
   const y0 = y, y1 = y + 0.07;
-  box(opaque, x + 0.38, y0, z + 0.38, x + 0.62, y1, z + 0.62, c, 7, bright);
+  box(opaque, x + 0.38, y0, z + 0.38, x + 0.62, y1, z + 0.62, c, WHITE_TILE, bright);
   for (const [dx, dz] of HDIRS) {
     const t = world.get(x + dx, y, z + dz);
     const tb = world.get(x + dx, y - 1, z + dz);
@@ -301,7 +298,7 @@ function wire(world, x, y, z, powered) {
       const bx = dx > 0 ? x + 1 : dx < 0 ? x + 0.38 : x + 0.58;
       const az = dz > 0 ? z + 0.62 : dz < 0 ? z : z + 0.42;
       const bz = dz > 0 ? z + 1 : dz < 0 ? z + 0.38 : z + 0.58;
-      box(opaque, ax, y0, az, bx, y1, bz, c, 7, bright);
+      box(opaque, ax, y0, az, bx, y1, bz, c, WHITE_TILE, bright);
     }
   }
 }
@@ -318,12 +315,12 @@ function head(world, x, y, z, facing) {
     4: [[x, y, z + 0.75, x + 1, y + 1, z + 1], [x + 0.5 - s, y + 0.5 - s, z, x + 0.5 + s, y + 0.5 + s, z + 0.75]],
     5: [[x, y, z, x + 1, y + 1, z + 0.25], [x + 0.5 - s, y + 0.5 - s, z + 0.25, x + 0.5 + s, y + 0.5 + s, z + 1]],
   }[facing] || [];
-  for (const b of boxes) box(opaque, b[0], b[1], b[2], b[3], b[4], b[5], c, 1);
+  for (const b of boxes) box(opaque, b[0], b[1], b[2], b[3], b[4], b[5], WHITE, PLANKS_TILE);
 }
 
 function portal(world, x, y, z, axis) {
   const c = COLORS[B.portal].top;
   const t = 0.12;
-  if (axis === 0) box(trans, x, y, z + 0.5 - t, x + 1, y + 1, z + 0.5 + t, c, 7, 1);
-  else box(trans, x + 0.5 - t, y, z, x + 0.5 + t, y + 1, z + 1, c, 7, 1);
+  if (axis === 0) box(trans, x, y, z + 0.5 - t, x + 1, y + 1, z + 0.5 + t, c, WHITE_TILE, 1);
+  else box(trans, x + 0.5 - t, y, z, x + 0.5 + t, y + 1, z + 1, c, WHITE_TILE, 1);
 }

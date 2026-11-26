@@ -349,3 +349,10 @@ body:not(.touch):not(.locked):not(.riding) #mouse-free { display: grid; }
 body:not(.touch) .slot .num { display: block; }
 body:not(.touch) #hotbar .slot:hover { background: var(--paper); }
 body:not(.touch) #hotbar .slot { cursor: pointer; }
+
+/* Block powers: shown on cards and when a block is picked */
+#item-label { display: grid; justify-items: center; gap: 2px; text-align: center; max-width: min(86vw, 360px); border-radius: 16px; }
+#item-label span { font-size: 12px; font-weight: 600; opacity: 0.9; line-height: 1.25; }
+.inv-item small { font-size: 10.5px; font-weight: 800; color: var(--terracotta-deep); line-height: 1.1; margin-top: -2px; }
+.inv-item img { image-rendering: pixelated; }
+.slot img { image-rendering: pixelated; }

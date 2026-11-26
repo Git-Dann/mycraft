@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import './style.css';
-import { AIR, BLOCKS, BY_KEY, DEFAULT_HOTBAR, ITEMS, ITEM_BY_KEY, SOLID, isRail, itemName } from './blocks.js';
+import { AIR, BLOCKS, BY_KEY, DEFAULT_HOTBAR, ITEMS, ITEM_BY_KEY, SOLID, isRail, itemName, POWERS } from './blocks.js';
 import { createAtlas, itemIcon } from './textures.js';
 import { World, W, D, H, CHUNK, CX, CZ, SPAWN, DIRS, findPortalInterior } from './world.js';
 import { meshChunk } from './mesher.js';
@@ -98,6 +98,7 @@ function showSelector(h, withGhost, now) {
 }
 
 function resize() {
+  fx?.setScreen?.(innerHeight);
   renderer.setSize(innerWidth, innerHeight, false);
   camera.aspect = innerWidth / innerHeight;
   camera.fov = innerWidth < innerHeight ? 80 : 72;
@@ -149,6 +150,8 @@ const player = {
   height: 1.72,
   eye: 1.58,
   ride: { yaw: 0, pitch: 0 },
+  hvx: 0,
+  hvz: 0,
 };
 
 // Chunk meshes for the active dimension
@@ -258,12 +261,34 @@ function moveAxis(axis, delta) {
 
 const fwd = new THREE.Vector3();
 let lastFloor = -1;
+let stepTimer = 0;
+function stepKind(id) {
+  if (id === B.snow) return 'snow';
+  if (id === B.glassy) return 'ice';
+  if (id === B.planks || id === B.log || id === B.note || id === B.rail) return 'wood';
+  if (id === B.stone || id === B.brick || id === B.piston) return 'stone';
+  if (id === B.sand) return 'sand';
+  if (id === B.cloud) return 'soft';
+  return 'grass';
+}
 function updatePlayer(dt) {
   const mi = input.move;
-  const speed = player.flying ? 9 : 4.6;
+  // What are we standing on? Ice is slippery, Mint is fast
+  const under = player.onGround ? world.get(Math.floor(player.pos.x), Math.floor(player.pos.y - 0.05), Math.floor(player.pos.z)) : 0;
+  const onMint = under === B.mint, onIce = under === B.glassy;
+  const speed = player.flying ? 9 : onMint ? 8.6 : 4.6;
   const sy = Math.sin(player.yaw), cy = Math.cos(player.yaw);
-  const vx = (mi.x * cy + mi.z * sy) * speed;
-  const vz = (mi.z * cy - mi.x * sy) * speed;
+  const tx = (mi.x * cy + mi.z * sy) * speed;
+  const tz = (mi.z * cy - mi.x * sy) * speed;
+  const grip = player.flying ? 14 : onIce ? 1.1 : player.onGround ? 22 : 6;
+  const k = Math.min(1, grip * dt);
+  player.hvx += (tx - player.hvx) * k;
+  player.hvz += (tz - player.hvz) * k;
+  const vx = player.hvx, vz = player.hvz;
+  if (onMint && Math.hypot(vx, vz) > 2 && Math.random() < dt * 10) fx.pop('sparkle', player.pos.x, player.pos.y + 0.1, player.pos.z, { size: 0.2, life: 0.5, vy: 0.3, tint: 0xb8f5dc });
+  // footsteps that match the ground
+  stepTimer -= dt * Math.hypot(vx, vz);
+  if (player.onGround && stepTimer <= 0 && Math.hypot(vx, vz) > 1) { stepTimer = 1.7; audio.footstep(stepKind(under)); }
   const up = jumpHeld || input.keyJump;
   const down = downHeld || input.keyDown;
 
@@ -648,6 +673,7 @@ function breakAt(h) {
   if (id === B.carrot) collapsePortals(x, y, z);
   const st = state.fun.stats;
   st.broken++;
+  if (id === B.pinkleaf) fx.petals(x, y, z);
   if (id === B.leaves || id === B.pinkleaf) {
     st.leaves++;
     // Sometimes a butterfly was hiding in the leaves (the first one shows up after a few)
@@ -677,6 +703,22 @@ function collapsePortals(x, y, z) {
   }
 }
 
+/** Tapping a block with a power uses it instead of building on it. Returns true if handled. */
+function useBlock(h) {
+  if (h.id === B.note) { playNote(h.x, h.y, h.z); return true; }
+  if (h.id === B.firework) { launchFirework(h.x, h.y, h.z); return true; }
+  if (h.id === B.generator) {
+    const off = world.getMeta(h.x, h.y, h.z) === 1;
+    world.set(h.x, h.y, h.z, B.generator, off ? undefined : 1);
+    audio.power();
+    toast(off ? 'Generator on' : 'Generator off');
+    runCircuits();
+    state.needsSave = true;
+    return true;
+  }
+  return false;
+}
+
 function useAt(h) {
   const key = state.hotbar[state.slot];
   const item = ITEM_BY_KEY[key];
@@ -704,6 +746,7 @@ function useAt(h) {
   }
   if (!h.ok) return;
   if (h.id === B.goldcarrot) { collectGolden(h.x, h.y, h.z); return; }
+  if (useBlock(h)) return;
   const id = B[item.block];
   const x = h.x + h.nx, y = h.y + h.ny, z = h.z + h.nz;
   if (!world.inBounds(x, y, z)) { toast('You have reached the edge of the world'); return; }
@@ -722,9 +765,15 @@ function useAt(h) {
     meta = DIRS.findIndex(([dx, dy, dz]) => dx === h.nx && dy === h.ny && dz === h.nz);
     if (meta < 0) meta = 2;
   }
-  remember(x, y, z);
-  world.set(x, y, z, id, meta);
-  flashAt(x, y, z);
+  let py = y;
+  if (id === B.sand) {
+    // Sand falls until it lands on something
+    while (py > 1 && !SOLID[world.get(x, py - 1, z)] && world.get(x, py - 1, z) !== B.portal) py--;
+    if (py !== y) fx.pop('sparkle', x + 0.5, py + 0.6, z + 0.5, { size: 0.5, life: 0.5, vy: 0.4, tint: 0xe8d5a6 });
+  }
+  remember(x, py, z);
+  world.set(x, py, z, id, meta);
+  flashAt(x, py, z);
   navigator.vibrate?.(6);
   countBuilt();
   if (id === B.note) playNote(x, y, z);
@@ -868,10 +917,11 @@ function selectSlot(i) {
   document.querySelectorAll('#hotbar .slot').forEach((s, k) => s.classList.toggle('sel', k === state.slot));
   const item = ITEM_BY_KEY[state.hotbar[state.slot]];
   const label = $('item-label');
-  label.textContent = itemName(item);
+  const power = POWERS[item.key];
+  label.innerHTML = power ? `<b>${itemName(item)}</b><span>${power[1]}</span>` : `<b>${itemName(item)}</b>`;
   label.classList.add('on');
   clearTimeout(label._t);
-  label._t = setTimeout(() => label.classList.remove('on'), 1200);
+  label._t = setTimeout(() => label.classList.remove('on'), power ? 2600 : 1200);
   audio.tap();
 }
 
@@ -895,7 +945,9 @@ function openInventory() {
       const item = ITEM_BY_KEY[key];
       const b = document.createElement('button');
       b.className = 'inv-item' + (key === current ? ' sel' : '');
-      b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>`;
+      const power = POWERS[key];
+      b.innerHTML = `<img src="${itemIcon(item)}" alt="" draggable="false"><span>${itemName(item)}</span>${power ? `<small>${power[0]}</small>` : ''}`;
+      if (power) b.title = power[1];
       b.addEventListener('click', () => {
         const existing = state.hotbar.indexOf(item.key);
         if (existing >= 0) state.slot = existing;
@@ -913,6 +965,8 @@ function openInventory() {
 
 let openSheetId = null;
 function openSheet(id) {
+  // never stack sheets: close whatever is open first
+  if (openSheetId && openSheetId !== id) $(openSheetId).classList.remove('on');
   openSheetId = id;
   state.paused = true;
   input.reset();
@@ -1221,6 +1275,23 @@ document.addEventListener('visibilitychange', () => { if (document.hidden && sta
 // ---------------------------------------------------------------------------------------------------------
 // Main loop
 
+let lastHintCheck = 0;
+/** Gentle, one-time nudges so it's clear how to feed a bunny. */
+function bunnyHints() {
+  if (state.fun.pet || coaster.riding) return;
+  let near = false;
+  for (const b of bunnies.list) if (Math.hypot(b.x - player.pos.x, b.z - player.pos.z) < 5) { near = true; break; }
+  if (!near) return;
+  const holding = ITEM_BY_KEY[state.hotbar[state.slot]]?.key === 'carrot';
+  if (holding && !state.hintTapBunny) {
+    state.hintTapBunny = true;
+    toast(input.touchMode ? 'Tap a bunny to feed it your carrot' : 'Right click a bunny to feed it your carrot');
+  } else if (!holding && !state.hintPickCarrot) {
+    state.hintPickCarrot = true;
+    toast('A bunny! Pick the Carrot, then tap the bunny to feed it');
+  }
+}
+
 let last = performance.now();
 let frameAcc = 0, frameCount = 0, slowFrames = 0;
 let titleAngle = 0;
@@ -1276,6 +1347,10 @@ function frame(now) {
       petTag.visible = !coaster.riding && d > 2.6;
       petTag.material.opacity = Math.min(1, (d - 2.6) / 1.5);
     } else petTag.visible = false;
+  }
+  if (state.started && !state.paused && now - lastHintCheck > 500) {
+    lastHintCheck = now;
+    bunnyHints();
   }
   if (!state.paused) {
     dayNight.update(dt, state.dim, camera.position, world, sky, nightMats);

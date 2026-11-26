@@ -19,9 +19,9 @@ export const BLOCKS = [
   { id: 9, key: 'carrot', name: 'Carrot', top: '#f08a3c', side: '#ef8233', bottom: '#d9702a', tile: T.BARK, solid: true },
   { id: 10, key: 'candy', name: 'Bunny Grass', top: '#f4a9c8', side: '#e8c9a8', bottom: '#dcb995', sideTop: '#f4a9c8', tile: T.GRAIN, solid: true },
   { id: 11, key: 'cloud', name: 'Cloud', top: '#ffffff', side: '#f3f1f6', bottom: '#e8e4ee', tile: T.SMOOTH, solid: true },
-  { id: 12, key: 'butter', name: 'Butter', top: '#e5c579', side: '#dcbb6c', bottom: '#cfae60', tile: T.SMOOTH, solid: true },
+  { id: 12, key: 'butter', name: 'Sunshine', top: '#e5c579', side: '#dcbb6c', bottom: '#cfae60', tile: T.SMOOTH, solid: true },
   { id: 13, key: 'mint', name: 'Mint', top: '#9fd8c0', side: '#94cdb5', bottom: '#86bfa7', tile: T.SMOOTH, solid: true },
-  { id: 14, key: 'sky', name: 'Sky Blue', top: '#8daabb', side: '#829fb0', bottom: '#7691a2', tile: T.SMOOTH, solid: true },
+  { id: 14, key: 'sky', name: 'Star Block', top: '#8daabb', side: '#829fb0', bottom: '#7691a2', tile: T.SMOOTH, solid: true },
   { id: 15, key: 'snow', name: 'Snow', top: '#f7f6f2', side: '#eeece6', bottom: '#e2e0da', tile: T.GRAIN, solid: true },
   { id: 16, key: 'rail', name: 'Track', shape: 'rail', top: '#8a6a4f', side: '#6c5240', bottom: '#6c5240', tile: T.PLANKS, solid: false },
   { id: 17, key: 'loop', name: 'Loop', shape: 'loop', top: '#e5c579', side: '#c9a85a', bottom: '#c9a85a', tile: T.SMOOTH, solid: false },
@@ -87,3 +87,27 @@ export const ITEM_BY_KEY = Object.fromEntries(ITEMS.map((i) => [i.key, i]));
 export const itemName = (item) => item.name || BLOCKS[BY_KEY[item.block]].name;
 
 export const DEFAULT_HOTBAR = ['grass', 'planks', 'stone', 'carrot', 'rail', 'loop', 'cart', 'key', 'wire'];
+
+// Each special block's power, shown on its card and when it's picked. Plain building blocks have none.
+export const POWERS = {
+  cloud: ['Bouncy', 'Bouncy! Land on it to boing up high'],
+  glassy: ['Slippery', 'Slippery! You slide when you walk on it'],
+  mint: ['Speed', 'Zoom! Walk on it to go super fast'],
+  sand: ['Falls', 'Falls down if nothing is under it'],
+  snow: ['Crunchy', 'Crunchy footsteps'],
+  leaves: ['Butterflies', 'Break it and a butterfly might fly out'],
+  pinkleaf: ['Petals', 'Break it for a shower of petals'],
+  butter: ['Glows', 'Glows like the sun, even at night'],
+  sky: ['Twinkles', 'Twinkles with stars and glows at night'],
+  carrot: ['Bunny food', 'Tap a bunny while holding this to feed it. Also builds portal frames'],
+  generator: ['Tap: on/off', 'Makes power for Wire. Tap it to switch on or off'],
+  wire: ['Carries power', 'Carries power from a Generator'],
+  lamp: ['Lights up', 'Lights up when Wire powers it'],
+  piston: ['Pushes', 'Pushes blocks when Wire powers it'],
+  note: ['Tap to play', 'Tap it, walk on it or power it to play a note'],
+  firework: ['Tap to launch', 'Tap it, jump on it or power it to launch a firework'],
+  rail: ['Ride it', 'Build a track, then ride it with the Cart'],
+  loop: ['Loop the loop', 'Put it in a straight track for a loop the loop'],
+  cart: ['Ride', 'Tap a piece of track to ride it'],
+  key: ['Opens portals', 'Use it inside a Carrot frame to open a portal'],
+};
